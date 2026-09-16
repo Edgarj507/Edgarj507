@@ -1,0 +1,1889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KAIJU BLOCKS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --board-bg: #0d1117;
+            --text-color: #c9d1d9;
+            --button-bg: #21262d;
+            --button-border: #444c56;
+            --accent-color: #58a6ff;
+            --star-color1: rgba(255, 255, 255, 0.9);
+            --star-color2: rgba(255, 255, 255, 0.8);
+            --star-color3: rgba(255, 255, 255, 0.6);
+            --star-color4: rgba(255, 255, 255, 0.7);
+        }
+        body {
+            font-family: 'Press Start 2P', cursive;
+            background-size: cover;
+            background-position: center center;
+            background-repeat: no-repeat;
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 10px;
+            box-sizing: border-box;
+            user-select: none;
+            transition: background 1.5s ease-in-out;
+            position: relative;
+            overflow: hidden;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: -1;
+            background-image:
+                radial-gradient(var(--star-color1) 1px, transparent 2px),
+                radial-gradient(var(--star-color2) 1px, transparent 2px),
+                radial-gradient(var(--star-color3) 1px, transparent 3px),
+                radial-gradient(var(--star-color4) 1px, transparent 3px);
+            background-size: 550px 550px, 350px 350px, 250px 250px, 150px 150px;
+            background-position: 0 0, 40px 60px, 130px 270px, 70px 100px;
+            animation: move-stars 200s linear infinite;
+            transition: background-image 1s ease-in-out;
+        }
+        @keyframes move-stars {
+            from {background-position: 0 0, 40px 60px, 130px 270px, 70px 100px;}
+            to {background-position: -10000px 5000px, -10040px 5060px, -10130px 5270px, -10070px 5100px;}
+        }
+        .game-wrapper {
+            position: relative;
+            transform: translateX(8%);
+        }
+        .game-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 20px;
+            padding-top: 80px;
+        }
+        .main-game-column {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+        canvas#tetris {
+            background-color: rgba(10, 12, 24, 0.82);
+            border: 4px solid transparent;
+            border-image: linear-gradient(140deg, #0DC2FF, #F538FF 55%, #0DFF72) 1;
+            width: 100%;
+            max-width: 360px;
+            aspect-ratio: 1 / 2;
+            box-shadow:
+                0 0 22px rgba(245, 56, 255, 0.35),
+                0 0 44px rgba(13, 194, 255, 0.18),
+                inset 0 0 30px rgba(13, 194, 255, 0.10);
+        }
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            width: 180px;
+        }
+        .info-box, .preview-box {
+            background: linear-gradient(160deg, rgba(46, 33, 88, 0.55), rgba(15, 12, 30, 0.65));
+            border: 1px solid rgba(120, 140, 255, 0.35);
+            padding: 15px;
+            border-radius: 12px;
+            text-align: center;
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4), inset 0 0 16px rgba(120, 140, 255, 0.08);
+        }
+        .info-box h2 {
+            font-size: 0.8em;
+            margin: 0 0 10px 0;
+            color: var(--accent-color);
+            letter-spacing: 1px;
+            text-shadow: 0 0 8px rgba(88, 166, 255, 0.7);
+        }
+        .info-box p {
+            font-size: 1.15em;
+            margin: 0;
+            color: #ffffff;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: auto auto auto;
+            gap: 10px;
+            width: 100%;
+            max-width: 360px;
+        }
+        .control-btn {
+            background: linear-gradient(180deg, #2b3350, #171b2e);
+            border: 1px solid rgba(120, 140, 255, 0.4);
+            color: #dfe6ff;
+            padding: 15px 0;
+            font-family: inherit;
+            font-size: 1.2rem;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: border-color 0.15s, box-shadow 0.15s, transform 0.08s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 3px 0 rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+        }
+        .control-btn:hover {
+            border-color: #58a6ff;
+            box-shadow: 0 0 14px rgba(88, 166, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        }
+        .control-btn:active { transform: translateY(2px); box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5); }
+        .control-btn.up { grid-column: 2; grid-row: 1; }
+        .control-btn.left { grid-column: 1; grid-row: 2; }
+        .control-btn.down { grid-column: 2; grid-row: 2; }
+        .control-btn.right { grid-column: 3; grid-row: 2; }
+        .control-btn.drop {
+            grid-column: 1 / 4; grid-row: 3;
+            background: linear-gradient(180deg, #2f9a6a, #12503a);
+            border-color: rgba(80, 255, 180, 0.5);
+            letter-spacing: 2px;
+        }
+        .control-btn.pause {
+            grid-column: 1 / 4; grid-row: 4;
+            background: linear-gradient(180deg, #c0455f, #7a1f33);
+            border-color: rgba(255, 120, 150, 0.5);
+            letter-spacing: 2px;
+        }
+        .modal, .pause-overlay {
+            display: none; position: absolute; z-index: 10;
+            left: 0; top: 0; width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.7);
+            flex-direction: column;
+            justify-content: center; align-items: center;
+            color: white; font-size: 2em;
+        }
+        .pause-overlay-content { text-align: center; }
+        .resume-button {
+            font-family: 'Press Start 2P', cursive;
+            font-size: 0.7em;
+            padding: 15px 30px;
+            margin-top: 20px;
+            cursor: pointer;
+            color: white;
+            background-color: #238636;
+            border: none;
+            border-radius: 5px;
+            text-transform: uppercase;
+        }
+        .modal-content {
+            background-color: var(--button-bg); padding: 30px;
+            border: 2px solid var(--button-border); border-radius: 10px;
+            text-align: center; max-width: 80%;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .modal-content h2 { margin-top: 0; color: #f78166; }
+        .modal-content button {
+            background-color: #238636; color: white; padding: 10px 20px; border: none;
+            border-radius: 5px; font-family: inherit; font-size: 1em; cursor: pointer;
+        }
+        .meteor {
+            position: fixed;
+            z-index: 0;
+            background: linear-gradient(to bottom, rgba(255, 255, 255, 0.8), transparent);
+            width: 2px;
+            height: 200px;
+            filter: drop-shadow(0 0 8px #fff);
+        }
+        #cityscape {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: -2;
+            display: block;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            transition: opacity 0.6s ease-in-out;
+        }
+        .city-name {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 5;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 0.7em;
+            color: #ffffff;
+            text-shadow: 2px 2px #d81e8f;
+            letter-spacing: 1px;
+            transition: opacity 0.6s ease-in-out;
+        }
+        #musicToggle {
+            position: fixed;
+            top: 14px;
+            left: 14px;
+            z-index: 6;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 0.55em;
+            background-color: var(--button-bg);
+            color: var(--text-color);
+            border: 2px solid var(--button-border);
+            border-radius: 6px;
+            padding: 8px 10px;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        #musicToggle:active { transform: scale(0.95); }
+        #musicToggle.on { color: #0DFF72; border-color: #0DFF72; }
+        #crt {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 7;
+            background: repeating-linear-gradient(
+                to bottom,
+                rgba(0, 0, 0, 0.10),
+                rgba(0, 0, 0, 0.10) 1px,
+                transparent 1px,
+                transparent 3px
+            );
+        }
+        #crt::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse at center, transparent 56%, rgba(0, 0, 0, 0.5) 100%);
+        }
+        .flying-saucer {
+            position: fixed;
+            z-index: 1;
+            width: 80px;
+            height: 40px;
+            filter: drop-shadow(0 0 8px #F538FF);
+        }
+        .ufo-light { animation: blink 0.5s infinite alternate; }
+        .ufo-light.b { animation-delay: 0.25s; }
+        .kaiju {
+            position: fixed;
+            z-index: 2;
+            width: 170px;
+            height: 210px;
+            filter: drop-shadow(0 0 10px #0DFF72) drop-shadow(0 0 6px #FF6B1A);
+            pointer-events: none;
+        }
+        .kaiju.roaring { animation: kaiju-shake 0.1s infinite; }
+        .kaiju.charging .plate { animation: plate-glow 0.25s infinite alternate; }
+        @keyframes plate-glow {
+            from { fill: #CFEFFF; }
+            to { fill: #FFFFFF; }
+        }
+        @keyframes kaiju-shake {
+            0%   { transform: translate(0, 0); }
+            25%  { transform: translate(-2px, 1px); }
+            50%  { transform: translate(2px, -1px); }
+            75%  { transform: translate(-1px, -1px); }
+            100% { transform: translate(1px, 1px); }
+        }
+        .atomic-breath {
+            position: fixed;
+            height: 7px;
+            background: linear-gradient(90deg, #0DFF72, #E6FFF0, #0DC2FF);
+            filter: drop-shadow(0 0 8px #0DFF72) drop-shadow(0 0 4px #0DC2FF);
+            transform-origin: left center;
+            z-index: 3;
+            border-radius: 4px;
+        }
+        .laser-beam {
+            position: fixed;
+            height: 3px;
+            background: linear-gradient(90deg, #ff0000, #ff9999);
+            filter: drop-shadow(0 0 5px #ff0000);
+            transform-origin: left center;
+            z-index: 2;
+        }
+        .abduction-light {
+            position: absolute;
+            left: 50%;
+            top: 90%;
+            transform: translateX(-50%);
+            width: 100px;
+            height: 100px;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 70%);
+            border-radius: 50%;
+            opacity: 0;
+        }
+        .credit {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 0.8em;
+            color: #888;
+            z-index: 5;
+            transition: opacity 0.5s, transform 1.5s ease-in;
+        }
+        .credit-block {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background-color: #888;
+            border: 1px solid #555;
+            opacity: 1;
+            animation: credit-explode 0.5s ease-out forwards;
+        }
+        @keyframes blink {
+            from { opacity: 1; }
+            to { opacity: 0.2; }
+        }
+        @keyframes credit-explode {
+            0% {
+                transform: translate(0, 0) scale(1);
+                opacity: 1;
+            }
+            100% {
+                transform: translate(var(--dx), var(--dy)) scale(1.5);
+                opacity: 0;
+            }
+        }
+        @media (max-width: 800px) {
+            .game-wrapper {
+                transform: none;
+            }
+            .game-container {
+                flex-direction: column;
+                align-items: center;
+            }
+            .sidebar {
+                flex-direction: row;
+                width: 100%;
+                max-width: 360px;
+            }
+            .info-box, .preview-box {
+                flex-grow: 1;
+                min-width: 120px;
+            }
+            .credit {
+                font-size: 0.6em;
+            }
+            #gameTitle { font-size: 1.1em; }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="cityscape"></canvas>
+    <button id="musicToggle">&#9834; MUSIC: OFF</button>
+    <h1 id="gameTitle" style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5; font-size: 2em; color: #f538ff; font-family: 'Press Start 2P', cursive; text-shadow: 3px 3px #0dc2ff, 0 0 20px rgba(245, 56, 255, 0.55); white-space: nowrap; text-align: center;">KAIJU BLOCKS</h1>
+    <div id="cityName" class="city-name"></div>
+    <div class="credit">CREATED BY EDGAR R.</div>
+    <div class="game-wrapper">
+        <div class="game-container">
+            <div class="main-game-column">
+                <canvas id="tetris"></canvas>
+                <div class="controls">
+                    <button class="control-btn left">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                    </button>
+                    <button class="control-btn up">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+                    </button>
+                    <button class="control-btn right">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                    </button>
+                    <button class="control-btn down">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>
+                    </button>
+                    <button class="control-btn drop">DROP</button>
+                    <button id="pauseButton" class="control-btn pause">PAUSE</button>
+                </div>
+            </div>
+             <div class="sidebar">
+                <div class="info-box"><h2>SCORE</h2><p id="score">0</p></div>
+                <div class="info-box"><h2>LINES</h2><p id="lines">0</p></div>
+                <div class="info-box"><h2>LEVEL</h2><p id="level">1</p></div>
+                <div class="preview-box"><h2>NEXT</h2><canvas id="preview" width="120" height="120"></canvas></div>
+            </div>
+        </div>
+        <div id="pauseOverlay" class="pause-overlay">
+            <div class="pause-overlay-content">
+                <p>PAUSED</p>
+                <button id="resumeButton" class="resume-button">Resume</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="crt"></div>
+
+    <div id="gameOverModal" class="modal" style="position:fixed">
+        <div class="modal-content">
+            <h2>GAME OVER</h2>
+            <p>Your score: <span id="finalScore">0</span></p>
+            <button id="restartButton">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('tetris');
+        const context = canvas.getContext('2d');
+        const previewCanvas = document.getElementById('preview');
+        const previewContext = previewCanvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const linesEl = document.getElementById('lines');
+        const levelEl = document.getElementById('level');
+        const pauseButton = document.getElementById('pauseButton');
+        const pauseOverlay = document.getElementById('pauseOverlay');
+        const resumeButton = document.getElementById('resumeButton');
+        const gameOverModal = document.getElementById('gameOverModal');
+        const finalScoreEl = document.getElementById('finalScore');
+        const restartButton = document.getElementById('restartButton');
+        const creditElement = document.querySelector('.credit');
+        const cityscape = document.getElementById('cityscape');
+        const cityCtx = cityscape.getContext('2d');
+        const cityNameEl = document.getElementById('cityName');
+        const musicToggle = document.getElementById('musicToggle');
+
+        const COLS = 12;
+        const ROWS = 24;
+        let BLOCK_SIZE;
+        const PREVIEW_BLOCK_SIZE = 30;
+
+        // --- Game State ---
+        let board, score, lines, level, dropCounter, dropInterval, lastTime;
+        let isGameOver = false;
+        let isPaused = false;
+        let animationFrameId;
+        let particles = [];
+        let isCreditVisible = true;
+
+        let COLORS = [null, '#F538FF', '#0DC2FF', '#0DFF72', '#FF0D72', '#FF8E0D', '#FFE138', '#3877FF'];
+        function shade(hex, pct) {
+            const n = parseInt(hex.slice(1), 16);
+            let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+            const f = pct / 100;
+            if (pct >= 0) { r += (255 - r) * f; g += (255 - g) * f; b += (255 - b) * f; }
+            else { r *= 1 + f; g *= 1 + f; b *= 1 + f; }
+            return `rgb(${r | 0},${g | 0},${b | 0})`;
+        }
+        const BLOCK_LIGHT = COLORS.map(c => c ? shade(c, 50) : null);
+        const BLOCK_DARK  = COLORS.map(c => c ? shade(c, -42) : null);
+        const BLOCK_EDGE  = COLORS.map(c => c ? shade(c, -64) : null);
+        const TETROMINOES = {
+            'T': [[0, 1, 0], [1, 1, 1], [0, 0, 0]],
+            'I': [[0, 0, 0, 0], [2, 2, 2, 2], [0, 0, 0, 0], [0, 0, 0, 0]],
+            'S': [[0, 3, 3], [3, 3, 0], [0, 0, 0]],
+            'Z': [[4, 4, 0], [0, 4, 4], [0, 0, 0]],
+            'L': [[0, 0, 5], [5, 5, 5], [0, 0, 0]],
+            'J': [[6, 0, 0], [6, 6, 6], [0, 0, 0]],
+            'O': [[0, 7, 7, 0], [0, 7, 7, 0], [0, 0, 0, 0], [0, 0, 0, 0]]
+        };
+        const PIECES = 'TSZLIJO';
+        let player = { pos: { x: 0, y: 0 }, matrix: null, next: null };
+
+        const starThemes = [
+            { c1: '#FFFFFF', c2: '#FFFFFF', c3: '#FFFFFF', c4: '#FFFFFF' }, { c1: '#FFFFFF', c2: '#ADD8E6', c3: '#87CEEB', c4: '#00BFFF' },
+            { c1: '#FFFFFF', c2: '#E6E6FA', c3: '#D8BFD8', c4: '#DA70D6' }, { c1: '#FFFFFF', c2: '#FFFFE0', c3: '#FFD700', c4: '#FFA500' },
+            { c1: '#FFFFFF', c2: '#FFC0CB', c3: '#E0FFFF', c4: '#AFEEEE' }, { c1: '#FFFFFF', c2: '#B0C4DE', c3: '#778899', c4: '#FFFFFF' },
+            { c1: '#FFFFFF', c2: '#FF6347', c3: '#FFA07A', c4: '#FF4500' },
+        ];
+        function updateStarColors(level) {
+            const themeIndex = Math.floor((level - 1) / 5) % starThemes.length;
+            const theme = starThemes[themeIndex];
+            const rootStyle = document.documentElement.style;
+            rootStyle.setProperty('--star-color1', `${theme.c1}E6`);
+            rootStyle.setProperty('--star-color2', `${theme.c2}CC`);
+            rootStyle.setProperty('--star-color3', `${theme.c3}B3`);
+            rootStyle.setProperty('--star-color4', `${theme.c4}FF`);
+        }
+
+        const DYNAMIC_BACKGROUNDS = [
+            'linear-gradient(160deg, #020024 0%, #090979 35%, #002147 100%)', 'linear-gradient(160deg, #370a3b 0%, #4a0d4e 35%, #870058 100%)',
+            'linear-gradient(160deg, #120321 0%, #57075b 35%, #8f0f9b 100%)', 'linear-gradient(160deg, #410d0d 0%, #871414 35%, #b91c1c 100%)',
+            'linear-gradient(160deg, #011627 0%, #012a4a 35%, #013f6d 100%)'
+        ];
+        let currentBackgroundIndex = 0;
+        const BACKGROUND_TIMER_DURATION = 35;
+        let backgroundChangeTimer = BACKGROUND_TIMER_DURATION;
+        function updateDynamicBackground() {
+            currentBackgroundIndex = (currentBackgroundIndex + 1) % DYNAMIC_BACKGROUNDS.length;
+            document.body.style.background = DYNAMIC_BACKGROUNDS[currentBackgroundIndex];
+        }
+
+        const createBoard = () => Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+        const createPiece = type => JSON.parse(JSON.stringify(TETROMINOES[type]));
+
+        // ====================================================================
+        //  PIXEL CITYSCAPE BACKGROUND
+        // ====================================================================
+        let cityW = 240, cityH = 135;
+
+        // seeded RNG so a given "random city" always looks the same for its life
+        function mulberry32(seed) {
+            return function () {
+                seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+                let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+                t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            };
+        }
+
+        // Named cities. sky = top->horizon color stops. Landmarks drawn on top.
+        const CITY_DEFS = {
+            tokyo: {
+                name: 'TOKYO',
+                sky: ['#241249', '#5c1e6e', '#b6237e', '#ff6a3d', '#ffd45e'],
+                mountain: ['#3a1c5e', '#57296f'],
+                building: ['#241a52', '#2e2170', '#3a2a86', '#472f9a'],
+                windowCol: '#ffe27a', accent: '#ff4d6d', sun: true,
+                landmarks: ['tokyoTower', 'skytree', 'pagoda', 'blossoms']
+            },
+            la: {
+                name: 'LOS ANGELES',
+                sky: ['#3a1152', '#7d1f74', '#e0417f', '#ff8a3d', '#ffe06b'],
+                mountain: ['#4a2168', '#5f2c7a'],
+                building: ['#2a2060', '#372a86', '#4433a0', '#5a45b8'],
+                windowCol: '#ffe9a0', accent: '#ff7ad9', sun: true,
+                landmarks: ['laTower', 'hollywood', 'palms']
+            },
+            ny: {
+                name: 'NEW YORK',
+                sky: ['#0b1440', '#232a6e', '#5b2f8f', '#a13c8e', '#e86a6a'],
+                mountain: ['#1a2050', '#26265f'],
+                building: ['#141a45', '#1e265e', '#2b3576', '#374690'],
+                windowCol: '#ffd98a', accent: '#7ad0ff', sun: false,
+                landmarks: ['liberty', 'empire', 'wtc']
+            }
+        };
+
+        // palette pool for procedurally generated cities
+        const RANDOM_SKIES = [
+            ['#1a0b3d', '#4a1a6e', '#8f1f8f', '#ff4d6d', '#ffcf5e'],
+            ['#0a1a3d', '#1f3a8f', '#5b6dd8', '#ff9ad5', '#ffe9a0'],
+            ['#2b0a3d', '#6e1a5c', '#c72f6e', '#ff8a3d', '#ffe06b'],
+            ['#0b2b2b', '#1f6e5c', '#2fc7a1', '#ffd45e', '#fff2b0'],
+            ['#20102b', '#4a1f6e', '#7a2fc7', '#ff5ea1', '#ffc46b']
+        ];
+        const CITY_PREFIX = ['NEO', 'NEW', 'PORT', 'SANTA', 'MEGA', 'NORTH', 'FORT', 'SAN', 'LAKE', 'SILVER', 'CYBER'];
+        const CITY_CORE = ['KYOTO', 'VEGAS', 'HAVEN', 'VERTEX', 'ARKON', 'ZENITH', 'NOVA', 'DELTA', 'PRIME', 'ONYX', 'SOLARA', 'AZUMA', 'CORAL', 'RETROS', 'VOLTA'];
+
+        function makeRandomCity(seed) {
+            const rng = mulberry32(seed);
+            const sky = RANDOM_SKIES[Math.floor(rng() * RANDOM_SKIES.length)];
+            const hueShift = Math.floor(rng() * 3);
+            const buildingSets = [
+                ['#141a45', '#1e265e', '#2b3576', '#374690'],
+                ['#241a52', '#2e2170', '#3a2a86', '#472f9a'],
+                ['#0b2b3d', '#144a5c', '#1f6e7a', '#2f8f9a']
+            ];
+            let nm = CITY_PREFIX[Math.floor(rng() * CITY_PREFIX.length)] + ' ' + CITY_CORE[Math.floor(rng() * CITY_CORE.length)];
+            return {
+                name: nm,
+                sky: sky,
+                mountain: ['#2a1a4a', '#3a266a'],
+                building: buildingSets[hueShift % buildingSets.length],
+                windowCol: rng() < 0.5 ? '#ffe27a' : '#7ad0ff',
+                accent: rng() < 0.5 ? '#ff5ea1' : '#5effc7',
+                sun: rng() < 0.7,
+                landmarks: ['antenna', 'dome'],
+                seed: seed
+            };
+        }
+
+        function px(x, y, w, h, color) {
+            cityCtx.fillStyle = color;
+            cityCtx.fillRect(Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h)));
+        }
+
+        function drawSky(def, horizon) {
+            const grad = cityCtx.createLinearGradient(0, 0, 0, horizon);
+            const n = def.sky.length;
+            def.sky.forEach((c, i) => grad.addColorStop(i / (n - 1), c));
+            cityCtx.fillStyle = grad;
+            cityCtx.fillRect(0, 0, cityW, horizon);
+        }
+
+        function drawStars(rng, horizon) {
+            const count = Math.floor(cityW * 0.25);
+            for (let i = 0; i < count; i++) {
+                const x = rng() * cityW;
+                const y = rng() * horizon * 0.55;
+                cityCtx.globalAlpha = 0.4 + rng() * 0.6;
+                px(x, y, 1, 1, '#ffffff');
+            }
+            cityCtx.globalAlpha = 1;
+        }
+
+        function drawSun(def, horizon) {
+            const cx = cityW * 0.5;
+            const r = Math.min(cityW, cityH) * 0.24;
+            const cy = horizon - r * 0.35;
+            const g = cityCtx.createLinearGradient(0, cy - r, 0, cy + r);
+            g.addColorStop(0, '#fff2b0');
+            g.addColorStop(0.5, '#ffb64a');
+            g.addColorStop(1, '#ff477e');
+            cityCtx.fillStyle = g;
+            cityCtx.beginPath();
+            cityCtx.arc(cx, cy, r, 0, Math.PI * 2);
+            cityCtx.fill();
+            // retro horizontal slats across the lower half of the sun
+            for (let i = 0; i < 7; i++) {
+                const yy = cy + (r * 0.15) + i * (r * 0.14);
+                px(cx - r, yy, r * 2, Math.max(1, r * 0.05 + i * 0.4), def.sky[def.sky.length - 1]);
+            }
+        }
+
+        function drawMountains(def, horizon) {
+            for (let layer = 0; layer < 2; layer++) {
+                const color = def.mountain[layer];
+                const baseY = horizon - (layer === 0 ? cityH * 0.10 : cityH * 0.04);
+                const amp = (layer === 0 ? cityH * 0.16 : cityH * 0.10);
+                const rng = mulberry32(1000 + layer * 7 + (def.seed || 0));
+                let y = baseY - rng() * amp;
+                for (let x = 0; x <= cityW; x += 2) {
+                    y += (rng() - 0.5) * amp * 0.5;
+                    if (y < baseY - amp) y = baseY - amp;
+                    if (y > baseY) y = baseY;
+                    px(x, y, 2, horizon - y, color);
+                }
+            }
+        }
+
+        function drawWindows(x, y, w, h, def, rng) {
+            const wc = def.windowCol;
+            for (let wy = y + 2; wy < y + h - 1; wy += 3) {
+                for (let wx = x + 1; wx < x + w - 1; wx += 3) {
+                    if (rng() < 0.62) px(wx, wy, 1, 1, rng() < 0.15 ? def.accent : wc);
+                }
+            }
+        }
+
+        function drawSkyline(def, horizon, rng) {
+            let x = -2;
+            while (x < cityW) {
+                const w = 6 + Math.floor(rng() * 14);
+                const h = cityH * (0.10 + rng() * 0.34);
+                const y = horizon - h;
+                const col = def.building[Math.floor(rng() * def.building.length)];
+                px(x, y, w, h, col);
+                // subtle lighter top edge
+                px(x, y, w, 1, def.building[Math.min(def.building.length - 1, def.building.indexOf(col) + 1)] || col);
+                drawWindows(x, y, w, h, def, rng);
+                x += w + 1 + Math.floor(rng() * 2);
+            }
+        }
+
+        // ---- Landmarks -----------------------------------------------------
+        function lmTokyoTower(def, horizon) {
+            const cx = cityW * 0.30, base = horizon, top = horizon - cityH * 0.55;
+            const halfBase = cityW * 0.045;
+            cityCtx.fillStyle = '#e6402e';
+            cityCtx.beginPath();
+            cityCtx.moveTo(cx - halfBase, base); cityCtx.lineTo(cx + halfBase, base);
+            cityCtx.lineTo(cx + halfBase * 0.18, top); cityCtx.lineTo(cx - halfBase * 0.18, top);
+            cityCtx.closePath(); cityCtx.fill();
+            // white bands + mast
+            for (let i = 0; i < 4; i++) px(cx - halfBase * (0.7 - i * 0.15), base - (horizon - top) * (0.2 + i * 0.2), halfBase * (1.4 - i * 0.3), 1, '#ffffff');
+            px(cx - 1, top - cityH * 0.06, 2, cityH * 0.06, '#ffd45e');
+        }
+        function lmSkytree(def, horizon) {
+            const cx = cityW * 0.62, base = horizon, h = cityH * 0.66;
+            px(cx - 1.5, base - h, 3, h, '#bfe6ff');
+            px(cx - 3, base - h * 0.72, 6, 4, '#dff3ff'); // observation deck
+            px(cx - 0.5, base - h - cityH * 0.05, 1, cityH * 0.05, '#ffffff'); // mast
+        }
+        function lmPagoda(def, horizon) {
+            const cx = cityW * 0.82, base = horizon;
+            for (let i = 0; i < 3; i++) {
+                const w = 12 - i * 3, ty = base - cityH * (0.10 + i * 0.06);
+                px(cx - w / 2, ty, w, 2, '#7a1f2e');           // roof
+                px(cx - (w - 4) / 2, ty + 2, w - 4, cityH * 0.04, '#c98a5a'); // body
+            }
+        }
+        function lmBlossoms(def, horizon) {
+            const rng = mulberry32(55 + (def.seed || 0));
+            for (let i = 0; i < 9; i++) {
+                const x = rng() * cityW, y = horizon + 2 + rng() * (cityH - horizon - 3);
+                px(x, y, 1, 3, '#5a3a2a');                    // trunk
+                px(x - 2, y - 3, 5, 4, '#ff9ecb');            // pink canopy
+                px(x - 1, y - 4, 3, 2, '#ffc3e0');
+            }
+        }
+        function lmLaTower(def, horizon) {
+            const cx = cityW * 0.4, base = horizon, h = cityH * 0.6;
+            px(cx - 5, base - h, 10, h, '#5566cc');
+            px(cx - 5, base - h, 10, 2, '#8fa0ff');
+            // cylindrical crown
+            px(cx - 3, base - h - 4, 6, 4, '#aab6ff');
+            px(cx - 1, base - h - 8, 2, 4, '#ffffff');
+            drawWindows(cx - 5, base - h, 10, h, def, mulberry32(9 + (def.seed || 0)));
+        }
+        function lmHollywood(def, horizon) {
+            // white letter-blocks marching up a hillside
+            const hx = cityW * 0.72, hy = horizon - cityH * 0.30;
+            for (let i = 0; i < 9; i++) px(hx + i * 3, hy - i * 1.2, 2, 4, '#f5f5f5');
+        }
+        function lmPalms(def, horizon) {
+            for (const fx of [cityW * 0.12, cityW * 0.2, cityW * 0.9, cityW * 0.96]) {
+                const base = horizon + 2 + (cityH - horizon) * 0.4;
+                px(fx, base - cityH * 0.16, 1, cityH * 0.16, '#3a2a1a'); // trunk
+                cityCtx.fillStyle = '#1f7a3a';
+                for (let a = 0; a < 5; a++) {
+                    const ang = -Math.PI / 2 + (a - 2) * 0.5;
+                    px(fx + Math.cos(ang) * 4, base - cityH * 0.16 + Math.sin(ang) * 4, 2, 2, '#1f8f45');
+                }
+            }
+        }
+        function lmLiberty(def, horizon) {
+            const cx = cityW * 0.08, base = horizon;
+            px(cx - 3, base - 3, 7, 3, '#3a5a4a');         // pedestal
+            px(cx - 1, base - 12, 3, 9, '#4fae8c');        // body
+            px(cx - 0.5, base - 15, 2, 3, '#4fae8c');      // head
+            px(cx + 2, base - 18, 1, 6, '#5fd0a6');        // arm
+            px(cx + 2, base - 19, 2, 2, '#ffd45e');        // torch
+            for (let s = 0; s < 5; s++) px(cx - 1.5 + s * 0.9, base - 16, 1, 1, '#5fd0a6'); // crown
+        }
+        function lmEmpire(def, horizon) {
+            const cx = cityW * 0.45, base = horizon, h = cityH * 0.62;
+            px(cx - 5, base - h * 0.6, 10, h * 0.6, '#2b3576');
+            px(cx - 3, base - h * 0.85, 6, h * 0.25, '#374690');
+            px(cx - 1, base - h, 2, h * 0.15, '#4a5aa8');   // spire
+            px(cx - 0.5, base - h - cityH * 0.04, 1, cityH * 0.04, '#9fb4ff');
+            drawWindows(cx - 5, base - h * 0.6, 10, h * 0.6, def, mulberry32(21));
+        }
+        function lmWtc(def, horizon) {
+            const cx = cityW * 0.6, base = horizon, h = cityH * 0.7;
+            px(cx - 3, base - h, 6, h, '#3a4690');
+            px(cx - 3, base - h, 6, 1, '#7a8fe0');
+            px(cx - 0.5, base - h - cityH * 0.06, 1, cityH * 0.06, '#cfe0ff'); // antenna spire
+            drawWindows(cx - 3, base - h, 6, h, def, mulberry32(33));
+        }
+        function lmAntenna(def, horizon) {
+            const cx = cityW * (0.3 + (def.seed % 40) / 100), base = horizon, h = cityH * 0.6;
+            px(cx - 4, base - h, 8, h, def.building[3]);
+            px(cx - 0.5, base - h - cityH * 0.08, 1, cityH * 0.08, def.accent);
+            px(cx - 2, base - h - cityH * 0.02, 4, 1, def.accent);
+        }
+        function lmDome(def, horizon) {
+            const cx = cityW * (0.6 + (def.seed % 30) / 120), base = horizon, r = cityH * 0.08;
+            cityCtx.fillStyle = def.building[2];
+            cityCtx.beginPath(); cityCtx.arc(cx, base, r, Math.PI, 0); cityCtx.fill();
+            px(cx - 0.5, base - r - cityH * 0.03, 1, cityH * 0.03, def.accent);
+        }
+        const LANDMARK_FNS = {
+            tokyoTower: lmTokyoTower, skytree: lmSkytree, pagoda: lmPagoda, blossoms: lmBlossoms,
+            laTower: lmLaTower, hollywood: lmHollywood, palms: lmPalms,
+            liberty: lmLiberty, empire: lmEmpire, wtc: lmWtc, antenna: lmAntenna, dome: lmDome
+        };
+
+        function drawCity(def) {
+            const horizon = Math.round(cityH * 0.74);
+            const rng = mulberry32((def.seed || 7) + 101);
+            cityCtx.clearRect(0, 0, cityW, cityH);
+            drawSky(def, horizon);
+            drawStars(mulberry32((def.seed || 7) + 202), horizon);
+            if (def.sun) drawSun(def, horizon);
+            drawMountains(def, horizon);
+            drawSkyline(def, horizon, rng);
+            (def.landmarks || []).forEach(l => LANDMARK_FNS[l] && LANDMARK_FNS[l](def, horizon));
+            // ground
+            px(0, horizon, cityW, cityH - horizon, '#0e0a1e');
+            px(0, horizon, cityW, 1, def.accent);
+            // faint road center line
+            for (let x = 2; x < cityW; x += 8) px(x, cityH - Math.round((cityH - horizon) * 0.35), 3, 1, '#3a3560');
+        }
+
+        // playlist of cities to rotate through; 'random' regenerates each time
+        const CITY_PLAYLIST = ['tokyo', 'la', 'ny', 'random', 'tokyo', 'random', 'la', 'random', 'ny', 'random'];
+        let cityIndex = 0;
+        let currentCity = null;
+
+        function buildCityAt(i) {
+            const key = CITY_PLAYLIST[i % CITY_PLAYLIST.length];
+            if (key === 'random') return makeRandomCity(Math.floor(Math.random() * 1e9));
+            return Object.assign({ seed: 0 }, CITY_DEFS[key]);
+        }
+        function drawCurrentCity() {
+            if (!currentCity) return;
+            drawCity(currentCity);
+            if (cityNameEl) cityNameEl.textContent = currentCity.name;
+        }
+        function resizeCityscape() {
+            cityW = 240;
+            cityH = Math.max(120, Math.round(cityW * window.innerHeight / Math.max(1, window.innerWidth)));
+            cityscape.width = cityW;
+            cityscape.height = cityH;
+            cityCtx.imageSmoothingEnabled = false;
+            drawCurrentCity();
+        }
+        function cycleCity() {
+            cityscape.style.opacity = '0';
+            if (cityNameEl) cityNameEl.style.opacity = '0';
+            setTimeout(() => {
+                cityIndex++;
+                currentCity = buildCityAt(cityIndex);
+                drawCurrentCity();
+                cityscape.style.opacity = '1';
+                if (cityNameEl) cityNameEl.style.opacity = '1';
+            }, 600);
+        }
+        function initCityscape() {
+            currentCity = buildCityAt(cityIndex);
+            resizeCityscape();
+        }
+        // ==================== end cityscape ================================
+
+        function playerReset() {
+            const pieceType = PIECES[Math.floor(Math.random() * PIECES.length)];
+            player.matrix = player.next || createPiece(pieceType);
+            const nextPieceType = PIECES[Math.floor(Math.random() * PIECES.length)];
+            player.next = createPiece(nextPieceType);
+            player.pos.y = 0;
+            player.pos.x = Math.floor(COLS / 2) - Math.floor(player.matrix[0].length / 2);
+            if (collide(board, player)) handleGameOver();
+            drawPreview();
+        }
+
+        function shade(hex, pct) {
+            const n = parseInt(hex.slice(1), 16);
+            let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+            if (pct >= 0) { r += (255 - r) * pct; g += (255 - g) * pct; b += (255 - b) * pct; }
+            else { r += r * pct; g += g * pct; b += b * pct; }
+            return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+        }
+
+        // A beveled, glossy 3D block drawn in scaled (1 unit = 1 cell) space
+        function drawBlock(ctx, x, y, color) {
+            const b = 0.14;
+            ctx.fillStyle = shade(color, -0.35);
+            ctx.fillRect(x, y, 1, 1);
+            ctx.fillStyle = shade(color, 0.5);            // top-left highlight
+            ctx.beginPath();
+            ctx.moveTo(x, y); ctx.lineTo(x + 1, y); ctx.lineTo(x + 1 - b, y + b);
+            ctx.lineTo(x + b, y + b); ctx.lineTo(x + b, y + 1 - b); ctx.lineTo(x, y + 1);
+            ctx.closePath(); ctx.fill();
+            ctx.fillStyle = shade(color, -0.5);           // bottom-right shadow
+            ctx.beginPath();
+            ctx.moveTo(x + 1, y); ctx.lineTo(x + 1, y + 1); ctx.lineTo(x, y + 1);
+            ctx.lineTo(x + b, y + 1 - b); ctx.lineTo(x + 1 - b, y + 1 - b); ctx.lineTo(x + 1 - b, y + b);
+            ctx.closePath(); ctx.fill();
+            ctx.fillStyle = color;                        // inner face
+            ctx.fillRect(x + b, y + b, 1 - 2 * b, 1 - 2 * b);
+            ctx.fillStyle = 'rgba(255,255,255,0.28)';     // glossy top strip
+            ctx.fillRect(x + b, y + b, 1 - 2 * b, (1 - 2 * b) * 0.30);
+        }
+
+        function drawGrid() {
+            context.strokeStyle = 'rgba(120,160,255,0.06)';
+            context.lineWidth = 0.02;
+            for (let x = 1; x < COLS; x++) { context.beginPath(); context.moveTo(x, 0); context.lineTo(x, ROWS); context.stroke(); }
+            for (let y = 1; y < ROWS; y++) { context.beginPath(); context.moveTo(0, y); context.lineTo(COLS, y); context.stroke(); }
+        }
+
+        function drawPlayerGlow() {
+            const v = player.matrix.flat().find(val => val > 0);
+            if (!v) return;
+            context.save();
+            context.shadowColor = COLORS[v];
+            context.shadowBlur = 0.45;
+            context.globalCompositeOperation = 'lighter';
+            context.globalAlpha = 0.5;
+            context.fillStyle = COLORS[v];
+            player.matrix.forEach((row, y) => row.forEach((val, x) => {
+                if (val !== 0) context.fillRect(x + player.pos.x + 0.2, y + player.pos.y + 0.2, 0.6, 0.6);
+            }));
+            context.restore();
+        }
+
+        function draw() {
+            context.clearRect(0, 0, canvas.width, canvas.height);
+            drawGrid();
+            drawGhostPiece();
+            drawMatrix(board, { x: 0, y: 0 });
+            drawPlayerGlow();
+            drawMatrix(player.matrix, player.pos);
+            drawParticles();
+        }
+
+        function drawMatrix(matrix, offset) {
+            const currentContext = this?.context || context;
+            matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) drawBlock(currentContext, x + offset.x, y + offset.y, COLORS[value]);
+                });
+            });
+        }
+
+        function drawGhostPiece() {
+            const ghost = { ...player, pos: { ...player.pos } };
+            while (!collide(board, ghost)) { ghost.pos.y++; }
+            ghost.pos.y--;
+            const v = player.matrix.flat().find(val => val > 0);
+            if (v) {
+                const color = COLORS[v];
+                ghost.matrix.forEach((row, y) => row.forEach((value, x) => {
+                    if (value !== 0) {
+                        context.globalAlpha = 0.16;
+                        context.fillStyle = color;
+                        context.fillRect(x + ghost.pos.x, y + ghost.pos.y, 1, 1);
+                        context.globalAlpha = 0.5;
+                        context.strokeStyle = color;
+                        context.lineWidth = 0.05;
+                        context.strokeRect(x + ghost.pos.x + 0.03, y + ghost.pos.y + 0.03, 0.94, 0.94);
+                    }
+                }));
+                context.globalAlpha = 1;
+            }
+        }
+
+        function drawPreview() {
+            previewContext.fillStyle = 'rgba(13, 17, 23, 0.8)';
+            previewContext.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+            const matrix = player.next;
+            if (!matrix) return;
+            let minX = matrix[0].length, maxX = -1, minY = matrix.length, maxY = -1;
+            for (let y = 0; y < matrix.length; y++) {
+                for (let x = 0; x < matrix[y].length; x++) {
+                    if (matrix[y][x] !== 0) {
+                        minX = Math.min(minX, x);
+                        maxX = Math.max(maxX, x);
+                        minY = Math.min(minY, y);
+                        maxY = Math.max(maxY, y);
+                    }
+                }
+            }
+            const shapeWidth = maxX - minX + 1;
+            const shapeHeight = maxY - minY + 1;
+            const canvasBlocksW = previewCanvas.width / PREVIEW_BLOCK_SIZE;
+            const canvasBlocksH = previewCanvas.height / PREVIEW_BLOCK_SIZE;
+            const offsetX = (canvasBlocksW - shapeWidth) / 2 - minX;
+            const offsetY = (canvasBlocksH - shapeHeight) / 2 - minY;
+            const tempContext = { context: previewContext };
+            drawMatrix.call(tempContext, matrix, {x: offsetX, y: offsetY});
+        }
+
+        function merge(board, player) {
+            player.matrix.forEach((row, y) => row.forEach((value, x) => {
+                if (value !== 0) board[y + player.pos.y][x + player.pos.x] = value;
+            }));
+        }
+
+        function collide(board, player) {
+            const [matrix, offset] = [player.matrix, player.pos];
+            for (let y = 0; y < matrix.length; ++y) {
+                for (let x = 0; x < matrix[y].length; ++x) {
+                    if (matrix[y][x] !== 0 && (board[y + offset.y] && board[y + offset.y][x + offset.x]) !== 0) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function createExplosion(x, y, color) {
+            for (let i = 0; i < 15; i++) {
+                particles.push({
+                    x: x + 0.5, y: y + 0.5,
+                    vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.4,
+                    size: Math.random() * 0.45 + 0.15, color: color, life: 80
+                });
+            }
+        }
+
+        function updateParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx; p.y += p.vy; p.vy += 0.008; p.life--;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+        }
+
+        function drawParticles() {
+            for (const p of particles) {
+                context.globalAlpha = Math.max(0, p.life / 80);
+                context.fillStyle = p.color;
+                context.fillRect(p.x, p.y, p.size, p.size);
+            }
+            context.globalAlpha = 1.0;
+        }
+
+        function boardSweep() {
+            let clearedLinesCount = 0;
+            for (let y = board.length - 1; y >= 0; y--) {
+                if (board[y].every(value => value > 0)) {
+                    clearedLinesCount++;
+                    const clearedRow = board.splice(y, 1)[0];
+                    clearedRow.forEach((value, x) => createExplosion(x, y, COLORS[value]));
+                    board.unshift(Array(COLS).fill(0));
+                    y++;
+                }
+            }
+            if (clearedLinesCount > 0) {
+                lines += clearedLinesCount;
+                sfxLine(clearedLinesCount);
+                const lineScores = [0, 40, 100, 300, 1200];
+                score += (lineScores[clearedLinesCount] || lineScores[4]) * level;
+                const newLevel = Math.floor(lines / 10) + 1;
+                if (newLevel > level) {
+                    level = Math.min(100, newLevel);
+                    sfxLevel();
+                    const startSpeed = 1000, endSpeed = 50;
+                    const progress = (level - 1) / 99;
+                    dropInterval = startSpeed - (startSpeed - endSpeed) * progress;
+                    dropInterval = Math.max(endSpeed, dropInterval);
+                    updateStarColors(level);
+                }
+            }
+        }
+
+        function updateScore() {
+            scoreEl.innerText = score; linesEl.innerText = lines; levelEl.innerText = level;
+        }
+
+        function rotate(matrix) {
+            const N = matrix.length - 1;
+            return matrix.map((row, i) => row.map((val, j) => matrix[N - j][i]));
+        }
+
+        function playerRotate() {
+            const originalMatrix = player.matrix, originalPos = player.pos.x;
+            player.matrix = rotate(player.matrix);
+            let offset = 1;
+            while (collide(board, player)) {
+                player.pos.x += offset;
+                offset = -(offset + (offset > 0 ? 1 : -1));
+                if (Math.abs(offset) > player.matrix[0].length) {
+                    player.matrix = originalMatrix;
+                    player.pos.x = originalPos;
+                    return;
+                }
+            }
+            sfxRotate();
+        }
+
+        const playerMove = dir => { player.pos.x += dir; if (collide(board, player)) { player.pos.x -= dir; } else { sfxMove(); } };
+        function playerDrop() {
+            player.pos.y++;
+            if (collide(board, player)) {
+                player.pos.y--;
+                merge(board, player);
+                sfxLock();
+                boardSweep(); updateScore(); playerReset();
+            }
+            dropCounter = 0;
+        }
+        function playerHardDrop() {
+            sfxDrop();
+            while (!collide(board, player)) { player.pos.y++; }
+            player.pos.y--;
+            merge(board, player);
+            sfxLock();
+            boardSweep(); updateScore(); playerReset();
+            dropCounter = 0;
+        }
+
+        function update(time = 0) {
+            if (isPaused) return;
+            if (isGameOver) {
+                updateParticles();
+                context.clearRect(0, 0, canvas.width, canvas.height);
+                drawParticles();
+                if (particles.length === 0) {
+                    document.querySelector('.game-container').style.visibility = 'hidden';
+                    document.querySelector('.controls').style.visibility = 'hidden';
+                    gameOverModal.style.display = 'flex';
+                } else {
+                    animationFrameId = requestAnimationFrame(update);
+                }
+                return;
+            }
+            updateParticles();
+            const deltaTime = time - lastTime;
+            lastTime = time;
+            dropCounter += deltaTime;
+            if (dropCounter > dropInterval) playerDrop();
+            draw();
+            animationFrameId = requestAnimationFrame(update);
+        }
+
+        function togglePause() {
+            if (isGameOver) return;
+            isPaused = !isPaused;
+            if (isPaused) {
+                cancelAnimationFrame(animationFrameId);
+                pauseOverlay.style.display = 'flex';
+                pauseButton.textContent = 'RESUME';
+            } else {
+                lastTime = performance.now();
+                update();
+                pauseOverlay.style.display = 'none';
+                pauseButton.textContent = 'PAUSE';
+            }
+        }
+
+        function handleVisibilityChange() {
+            if (document.hidden && !isPaused && !isGameOver) togglePause();
+        }
+
+        function handleGameOver() {
+            isGameOver = true;
+            sfxGameOver();
+            finalScoreEl.textContent = score;
+            board.forEach((row, y) => row.forEach((value, x) => {
+                if (value > 0) createExplosion(x, y, COLORS[value]);
+            }));
+        }
+
+        function resizeGame() {
+            const canvasWidth = canvas.clientWidth;
+            BLOCK_SIZE = canvasWidth / COLS;
+            canvas.width = canvasWidth;
+            canvas.height = BLOCK_SIZE * ROWS;
+            context.scale(BLOCK_SIZE, BLOCK_SIZE);
+            previewContext.scale(PREVIEW_BLOCK_SIZE, PREVIEW_BLOCK_SIZE);
+        }
+
+        function resetGame() {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            document.querySelector('.game-container').style.visibility = 'visible';
+            document.querySelector('.controls').style.visibility = 'visible';
+            isGameOver = false; isPaused = false;
+            board = createBoard();
+            score = 0; lines = 0; level = 1;
+            dropInterval = 1000;
+            lastTime = 0; dropCounter = 0;
+            particles = [];
+            playerReset();
+            updateScore();
+            updateStarColors(level);
+            gameOverModal.style.display = 'none';
+            pauseOverlay.style.display = 'none';
+            pauseButton.textContent = 'PAUSE';
+            update();
+        }
+
+        let isLeftToRightShower = true;
+        function createMeteor(pathType) {
+            const meteor = document.createElement('div');
+            meteor.classList.add('meteor');
+            const viewportWidth = window.innerWidth, viewportHeight = window.innerHeight;
+            const randomOffsetX = Math.random() * 300 - 150, randomOffsetY = Math.random() * 300 - 150;
+            let startX, startY, endX, endY;
+            if (pathType === 'left-to-right') {
+                startX = -200 + randomOffsetX; startY = -200 + randomOffsetY;
+                endX = viewportWidth + 200; endY = viewportHeight + 200;
+            } else {
+                startX = viewportWidth + 200 + randomOffsetX; startY = -200 + randomOffsetY;
+                endX = -200; endY = viewportHeight + 200;
+            }
+            meteor.style.left = `${startX}px`;
+            meteor.style.top = `${startY}px`;
+            const angle = Math.atan2(endY - startY, endX - startX) * 180 / Math.PI + 90;
+            meteor.style.transform = `rotate(${angle}deg)`;
+            document.body.appendChild(meteor);
+            meteor.animate(
+                [{ left: `${startX}px`, top: `${startY}px` }, { left: `${endX}px`, top: `${endY}px` }],
+                { duration: Math.random() * 1000 + 700, easing: 'linear' }
+            ).onfinish = () => meteor.remove();
+        }
+
+        function startMeteorShower() {
+            const showerSize = 7;
+            const pathType = isLeftToRightShower ? 'left-to-right' : 'right-to-left';
+            for (let i = 0; i < showerSize; i++) {
+                setTimeout(() => createMeteor(pathType), i * 150);
+            }
+            isLeftToRightShower = !isLeftToRightShower;
+        }
+
+        function destroyBlock(x, y) {
+            if (board[y] && board[y][x] > 0) {
+                const color = COLORS[board[y][x]];
+                createExplosion(x, y, color);
+                sfxZap();
+                board[y][x] = 0;
+            }
+        }
+
+        function explodeCredit() {
+            if (!creditElement || !isCreditVisible) return;
+            isCreditVisible = false;
+            const text = creditElement.textContent;
+            const rect = creditElement.getBoundingClientRect();
+            creditElement.style.opacity = '0';
+            for (let i = 0; i < text.length; i++) {
+                if (text[i].trim() === '') continue;
+                const block = document.createElement('div');
+                block.classList.add('credit-block');
+                block.style.left = `${rect.left + i * (rect.width / text.length)}px`;
+                block.style.top = `${rect.top}px`;
+                block.style.setProperty('--dx', `${(Math.random() - 0.5) * 60}px`);
+                block.style.setProperty('--dy', `${(Math.random() - 0.5) * 60}px`);
+                document.body.appendChild(block);
+                setTimeout(() => block.remove(), 500);
+            }
+            setTimeout(() => {
+                if (creditElement) {
+                    creditElement.style.opacity = '1';
+                    isCreditVisible = true;
+                }
+            }, 2000);
+        }
+
+        function createLaserBeam(startX, startY, endX, endY, onComplete) {
+            const laser = document.createElement('div');
+            laser.classList.add('laser-beam');
+            const length = Math.hypot(endX - startX, endY - startY);
+            const angle = Math.atan2(endY - startY, endX - startX) * (180 / Math.PI);
+            laser.style.width = `${length}px`;
+            laser.style.left = `${startX}px`;
+            laser.style.top = `${startY}px`;
+            laser.style.transform = `rotate(${angle}deg)`;
+            document.body.appendChild(laser);
+            laser.animate([
+                { opacity: 0 }, { opacity: 1, offset: 0.1 },
+                { opacity: 1, offset: 0.9 }, { opacity: 0 }
+            ], { duration: 300, easing: 'linear' })
+            .onfinish = () => {
+                laser.remove();
+                if (onComplete) onComplete();
+            };
+        }
+
+        // --- Pixel sprites ---------------------------------------------------
+        // Each map is just rows of characters; every character maps to a color
+        // in its palette (a '.' means an empty pixel). Edit these to reskin!
+        const UFO_MAP = [
+            '......CCC......',
+            '.....CWWWC.....',
+            '..mmmmmmmmmmm..',
+            'MMMMMMMMMMMMMMM',
+            'DYDDGDDYDDGDDYD',
+            '..DDDDDDDDDDD..',
+            '.....G...G.....'
+        ];
+        const UFO_PALETTE = {
+            'C': { color: '#0DC2FF' }, 'W': { color: '#A9ECFF' },
+            'm': { color: '#FF7BF5' }, 'M': { color: '#F538FF' },
+            'D': { color: '#8A1E93' },
+            'Y': { color: '#FFE138', cls: 'ufo-light' },
+            'G': { color: '#0DFF72', cls: 'ufo-light b' }
+        };
+
+        // Kaiju faces RIGHT (so it enters from the left and breathes toward the board)
+        const KAIJU_MAP = [
+            '..........gggg....',
+            '.........gggggg...',
+            '.......o.gggggg...',
+            '......o.ggggggerg.',
+            '.....o.ggggggggggg',
+            '......o.gggggkttkt',
+            '.....o.gggggggg...',
+            '....o..ggggggggg..',
+            '...o..gggggggggg..',
+            '...o.ggggggbbbggy.',
+            '..o.gggggbbbbbggy.',
+            '..o.gggggbbbbbg...',
+            '.o.ggggggbbbbg....',
+            'go.gggggggbbg.....',
+            'ggo.ggggggggg.....',
+            'ggo..gggggggg.....',
+            '.....gg...gg......',
+            '.....gg...gg......',
+            '.....gg...gg......',
+            '....ggg..ggg......',
+            '...yggg..gggy.....',
+            '..................'
+        ];
+        const KAIJU_PALETTE = {
+            'g': { color: '#2ECC40' }, 'b': { color: '#BFF2C6' },
+            'p': { color: '#CFEFFF', cls: 'plate' },
+            'o': { color: '#FF6B1A', cls: 'plate' },
+            'e': { color: '#FFFFFF' }, 'r': { color: '#FF3B3B' },
+            'k': { color: '#5A1010' }, 't': { color: '#FFFFFF' },
+            'y': { color: '#FFE138' }
+        };
+
+        // GYRO-MOTH (flies in from the top, beam from its underside)
+        const MOTH_MAP = [
+            '...a..............a...',
+            '....a............a....',
+            '.....a...bbbb...a.....',
+            '..WW.....beeb.....WW..',
+            '.WWww....bbbb....wwWW.',
+            'WWwwWs....bb....sWwwWW',
+            'WWwwWs....bb....sWwwWW',
+            '.WWwww....bb....wwwWW.',
+            '...Www....bb....wwW...',
+            '..WWww....bb....wwWW..',
+            '..WWww....bb....wwWW..',
+            '...Ww.....bb.....wW...',
+            '.........bbbb.........',
+            '.........bbbb.........',
+            '........b.bb.b........',
+            '.......a.b..b.a.......'
+        ];
+        const MOTH_PALETTE = {
+            'W': { color: '#FF5EA1' }, 'w': { color: '#7AD0FF' },
+            's': { color: '#FFD45E' }, 'b': { color: '#6A4A8A' },
+            'e': { color: '#E0FFFF' }, 'a': { color: '#FFD45E' }
+        };
+
+        // ROCK-TORT (stomps in from the right, faces left, fire breath)
+        const ROCK_MAP = [
+            '............C...C...',
+            '...........CC..CC...',
+            '.....ddd..dCCdCd....',
+            '...ddddd.dddCCd.....',
+            '.rreddddddddddd.....',
+            'mrrrdddddddddddd....',
+            'mmrrrdddddddddd.....',
+            '.rrrrddddddddd......',
+            '..rrddddddddd.......',
+            '..rrdddddddddd......',
+            '..rrdddddddddd......',
+            '...rddddddddd.......',
+            '...dddddddd.........',
+            '...rr....rr...rr....',
+            '...rr....rr...rr....',
+            '..ccc...ccc..ccc....'
+        ];
+        const ROCK_PALETTE = {
+            'r': { color: '#8A8A9A' }, 'd': { color: '#4A4A5C' },
+            'C': { color: '#FF4D6D', cls: 'plate' }, 'e': { color: '#FFCF3A' },
+            'm': { color: '#5A1010' }, 'c': { color: '#C9B070' }
+        };
+
+        // TENDRIL-KLACK (rises from the bottom, eye beam)
+        const KRK_MAP = [
+            '.......GGGGGGGG.......',
+            '.....GGGGGGGGGGGG.....',
+            '....GGGGGGGGGGGGGG....',
+            '...GGGGGGGGGGGGGGGG...',
+            '...GGGeeeeeeeeGGGGGG..',
+            '...GGeeiiiiiieeGGGGG..',
+            '...GGeiippppiieGGGGG..',
+            '...GGeiippppiieGGGGG..',
+            '...GGeeiiiiiieeGGGGG..',
+            '...GGGeeeeeeeeGGGGGG..',
+            '...GGGGGGGGGGGGGGGG...',
+            '...tGGGtGGtGGtGGGGt...',
+            '..ttGttGGtGGtGttGt....',
+            '..tGttGtGttGtGtGtt....',
+            '.ttGtGtGtGtGtGtGtt....',
+            '.tsGtsGtsGtsGtsGtt....',
+            'tt.tt..tt..tt..tt.....',
+            't...t...t...t...t.....'
+        ];
+        const KRK_PALETTE = {
+            'G': { color: '#2FAE9A' }, 't': { color: '#1F8578' },
+            'e': { color: '#FFFFFF' }, 'i': { color: '#FFD24A' },
+            'p': { color: '#161018' }, 's': { color: '#FF5EA1' }
+        };
+
+        // The kaiju roster. origin = [fx,fy] fraction of the sprite where the
+        // beam starts; entrance = which edge it comes in from.
+        const KAIJU_TYPES = [
+            { name: 'ZORGOX', map: KAIJU_MAP, palette: KAIJU_PALETTE, entrance: 'left', origin: [0.88, 0.27], glow: '#0DFF72', beam: ['#0DFF72', '#E6FFF0', '#0DC2FF'] },
+            { name: 'GYRO-MOTH', map: MOTH_MAP, palette: MOTH_PALETTE, entrance: 'top', origin: [0.5, 0.82], glow: '#FF5EA1', beam: ['#FF5EA1', '#FFD6F2', '#B06AFF'] },
+            { name: 'ROCK-TORT', map: ROCK_MAP, palette: ROCK_PALETTE, entrance: 'right', origin: [0.05, 0.30], glow: '#FF6B1A', beam: ['#FF3B1A', '#FFD24A', '#FF8A1A'] },
+            { name: 'TENDRIL-KLACK', map: KRK_MAP, palette: KRK_PALETTE, entrance: 'bottom', origin: [0.5, 0.33], glow: '#2FFFE0', beam: ['#2FFFE0', '#E0FFFA', '#5EFFC7'] }
+        ];
+
+        function buildSprite(map, palette) {
+            const w = Math.max(...map.map(r => r.length));
+            const h = map.length;
+            let rects = '';
+            map.forEach((row, y) => {
+                [...row].forEach((ch, x) => {
+                    const p = palette[ch];
+                    if (!p) return;
+                    const cls = p.cls ? ` class="${p.cls}"` : '';
+                    // width/height slightly over 1 to hide seams between pixels
+                    rects += `<rect x="${x}" y="${y}" width="1.03" height="1.03" fill="${p.color}"${cls}/>`;
+                });
+            });
+            return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block;">${rects}</svg>`;
+        }
+
+        function createSaucerElement() {
+            const saucer = document.createElement('div');
+            saucer.classList.add('flying-saucer');
+            saucer.innerHTML = buildSprite(UFO_MAP, UFO_PALETTE);
+            return saucer;
+        }
+
+        function animateSaucerToCredit(saucer) {
+            const creditRect = creditElement.getBoundingClientRect();
+            const targetX = creditRect.left + (creditRect.width / 2) - 40;
+            const targetY = creditRect.top - 100;
+            const startX = Math.random() < 0.5 ? -100 : window.innerWidth;
+            const startY = Math.random() * 150;
+            saucer.style.left = `${startX}px`;
+            saucer.style.top = `${startY}px`;
+            document.body.appendChild(saucer);
+            return saucer.animate(
+                [{ left: saucer.style.left, top: saucer.style.top }, { left: `${targetX}px`, top: `${targetY}px` }],
+                { duration: 2000, easing: 'ease-in-out', fill: 'forwards' }
+            );
+        }
+
+        function animateSaucerAway(saucer) {
+             saucer.animate([
+                { transform: 'translateY(0) scale(1)', opacity: 1 },
+                { transform: 'translateY(-200px) scale(0.5)', opacity: 0 }
+            ], { duration: 1500, easing: 'ease-in' })
+            .onfinish = () => saucer.remove();
+        }
+
+        function initiateLaserAttackOnCredit() {
+            if (!creditElement) return;
+            const saucer = createSaucerElement();
+            const flyToTarget = animateSaucerToCredit(saucer);
+            flyToTarget.onfinish = () => {
+                setTimeout(() => {
+                    const saucerRect = saucer.getBoundingClientRect();
+                    const creditRect = creditElement.getBoundingClientRect();
+                    createLaserBeam(saucerRect.left + saucerRect.width / 2, saucerRect.top + saucerRect.height / 2, creditRect.left + creditRect.width / 2, creditRect.top + creditRect.height / 2, explodeCredit);
+                    setTimeout(() => animateSaucerAway(saucer), 500);
+                }, 500);
+            };
+        }
+
+        function initiateAbduction() {
+            if (!creditElement || !isCreditVisible) return;
+            const saucer = createSaucerElement();
+            const flyToTarget = animateSaucerToCredit(saucer);
+            flyToTarget.onfinish = () => {
+                const light = document.createElement('div');
+                light.classList.add('abduction-light');
+                saucer.appendChild(light);
+                const powerUpAnimation = light.animate([
+                    { opacity: 0, transform: 'translateX(-50%) scale(0.5)' },
+                    { opacity: 1, transform: 'translateX(-50%) scale(1)' }
+                ], { duration: 1000, easing: 'ease-in-out', fill: 'forwards' });
+
+                powerUpAnimation.onfinish = () => {
+                    isCreditVisible = false;
+                    creditElement.style.transition = 'transform 2s ease-in, opacity 2s ease-in';
+                    creditElement.style.transform = `translateY(-120px) scale(0)`;
+                    creditElement.style.opacity = '0';
+                    setTimeout(() => {
+                        animateSaucerAway(saucer);
+                        setTimeout(() => {
+                            creditElement.style.transition = 'opacity 0.5s';
+                            creditElement.style.transform = 'translateY(0) scale(1)';
+                            creditElement.style.opacity = '1';
+                            isCreditVisible = true;
+                        }, 2000);
+                    }, 2100);
+                };
+            };
+        }
+
+        function runRandomSpecialEvent() {
+            if (Math.random() < 0.5) {
+                initiateAbduction();
+            } else {
+                initiateLaserAttackOnCredit();
+            }
+            const randomDelay = Math.random() * 180000 + 120000;
+            setTimeout(runRandomSpecialEvent, randomDelay);
+        }
+
+        function fireLaser(saucer) {
+            const targets = [];
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    if (board[y][x] > 0) targets.push({ x, y });
+                }
+            }
+            if (targets.length === 0) return;
+            const target = targets[Math.floor(Math.random() * targets.length)];
+            const originRect = saucer.getBoundingClientRect();
+            const canvasRect = canvas.getBoundingClientRect();
+            const startX = originRect.left + originRect.width / 2;
+            const startY = originRect.top + originRect.height / 2;
+            const endX = canvasRect.left + (target.x * BLOCK_SIZE) + (BLOCK_SIZE / 2);
+            const endY = canvasRect.top + (target.y * BLOCK_SIZE) + (BLOCK_SIZE / 2);
+            createLaserBeam(startX, startY, endX, endY, () => destroyBlock(target.x, target.y));
+        }
+
+        function createFlyingSaucer() {
+            const saucer = createSaucerElement();
+            const viewportWidth = window.innerWidth, viewportHeight = window.innerHeight;
+            const startSide = Math.random() < 0.5 ? 'left' : 'right';
+            const startY = Math.random() * viewportHeight * 0.3 + viewportHeight * 0.1;
+            let startX, endX;
+            if (startSide === 'left') {
+                startX = -100; endX = viewportWidth + 100;
+            } else {
+                startX = viewportWidth + 100; endX = -100;
+            }
+            saucer.style.left = `${startX}px`;
+            saucer.style.top = `${startY}px`;
+            document.body.appendChild(saucer);
+            setTimeout(() => {
+                if (document.body.contains(saucer)) fireLaser(saucer);
+            }, Math.random() * 2000 + 1000);
+            saucer.animate(
+                [{ transform: 'translateX(0)' }, { transform: `translateX(${endX - startX}px)` }],
+                { duration: Math.random() * 3000 + 4000, easing: 'linear' }
+            ).onfinish = () => saucer.remove();
+        }
+
+        // --- KAIJU -----------------------------------------------------------
+        function createKaijuElement(type) {
+            const kaiju = document.createElement('div');
+            kaiju.classList.add('kaiju');
+            kaiju.innerHTML = buildSprite(type.map, type.palette);
+            return kaiju;
+        }
+
+        function createAtomicBreath(startX, startY, endX, endY, colors, onComplete) {
+            const beam = document.createElement('div');
+            beam.classList.add('atomic-breath');
+            const length = Math.hypot(endX - startX, endY - startY);
+            const angle = Math.atan2(endY - startY, endX - startX) * (180 / Math.PI);
+            beam.style.width = `${length}px`;
+            beam.style.height = '12px';
+            beam.style.left = `${startX}px`;
+            beam.style.top = `${startY}px`;
+            beam.style.transform = `rotate(${angle}deg)`;
+            beam.style.background = `linear-gradient(90deg, ${colors[0]}, ${colors[1]}, ${colors[2]})`;
+            beam.style.filter = `drop-shadow(0 0 10px ${colors[0]}) drop-shadow(0 0 5px ${colors[2]})`;
+            document.body.appendChild(beam);
+            beam.animate([
+                { opacity: 0, transform: `rotate(${angle}deg) scaleY(0.4)` },
+                { opacity: 1, offset: 0.15, transform: `rotate(${angle}deg) scaleY(1.4)` },
+                { opacity: 1, offset: 0.8, transform: `rotate(${angle}deg) scaleY(1)` },
+                { opacity: 0, transform: `rotate(${angle}deg) scaleY(0.4)` }
+            ], { duration: 550, easing: 'linear' })
+            .onfinish = () => {
+                beam.remove();
+                if (onComplete) onComplete();
+            };
+        }
+
+        function kaijuAttack(kaiju, type) {
+            kaiju.classList.add('charging', 'roaring');
+            sfxRoar();
+            const kRect = kaiju.getBoundingClientRect();
+            const mouthX = kRect.left + kRect.width * type.origin[0];
+            const mouthY = kRect.top + kRect.height * type.origin[1];
+            setTimeout(() => {
+                kaiju.classList.remove('roaring');
+                const targets = [];
+                for (let y = 0; y < ROWS; y++) {
+                    for (let x = 0; x < COLS; x++) {
+                        if (board[y] && board[y][x] > 0) targets.push({ x, y });
+                    }
+                }
+                if (targets.length > 0) {
+                    const count = Math.random() < 0.5 ? 1 : 2;
+                    const canvasRect = canvas.getBoundingClientRect();
+                    for (let i = 0; i < count && targets.length > 0; i++) {
+                        const idx = Math.floor(Math.random() * targets.length);
+                        const t = targets.splice(idx, 1)[0];
+                        setTimeout(() => {
+                            const endX = canvasRect.left + (t.x * BLOCK_SIZE) + (BLOCK_SIZE / 2);
+                            const endY = canvasRect.top + (t.y * BLOCK_SIZE) + (BLOCK_SIZE / 2);
+                            createAtomicBreath(mouthX, mouthY, endX, endY, type.beam, () => destroyBlock(t.x, t.y));
+                        }, i * 350);
+                    }
+                }
+                setTimeout(() => kaiju.classList.remove('charging'), 800);
+            }, 900);
+        }
+
+        function createKaiju() {
+            if (isPaused || isGameOver) return;
+            const type = KAIJU_TYPES[Math.floor(Math.random() * KAIJU_TYPES.length)];
+            const kaiju = createKaijuElement(type);
+            const vw = window.innerWidth, vh = window.innerHeight;
+            const mapW = Math.max(...type.map.map(r => r.length));
+            const mapH = type.map.length;
+            let kH = Math.round(vh * 0.52);
+            let kW = Math.round(kH * mapW / mapH);
+            if (kW > vw * 0.9) { kW = Math.round(vw * 0.9); kH = Math.round(kW * mapH / mapW); }
+            kaiju.style.width = kW + 'px';
+            kaiju.style.height = kH + 'px';
+            kaiju.style.filter = `drop-shadow(0 0 16px ${type.glow})`;
+            const cr = canvas.getBoundingClientRect();
+            const cx = cr.left + cr.width / 2;
+            let restX, restY, prop, startVal, endVal;
+            if (type.entrance === 'left') {
+                restY = Math.max(0, Math.min(vh - kH, cr.top + cr.height * 0.12));
+                restX = Math.max(-kW * 0.3, cr.left - kW * 0.55);
+                kaiju.style.top = restY + 'px';
+                prop = 'left'; startVal = -kW; endVal = restX;
+            } else if (type.entrance === 'right') {
+                restY = Math.max(0, Math.min(vh - kH, cr.top + cr.height * 0.12));
+                restX = Math.min(vw - kW * 0.7, cr.right - kW * 0.45);
+                kaiju.style.top = restY + 'px';
+                prop = 'left'; startVal = vw; endVal = restX;
+            } else if (type.entrance === 'top') {
+                restX = Math.round(cx - kW / 2);
+                restY = Math.max(-kH * 0.08, cr.top - kH * 0.32);
+                kaiju.style.left = restX + 'px';
+                prop = 'top'; startVal = -kH; endVal = restY;
+            } else {
+                restX = Math.round(cx - kW / 2);
+                restY = Math.round(vh - kH * 0.92);
+                kaiju.style.left = restX + 'px';
+                prop = 'top'; startVal = vh; endVal = restY;
+            }
+            kaiju.style[prop] = startVal + 'px';
+            document.body.appendChild(kaiju);
+            const a = {}; a[prop] = startVal + 'px';
+            const b = {}; b[prop] = endVal + 'px';
+            kaiju.animate([a, b], { duration: 1500, easing: 'ease-out', fill: 'forwards' }).onfinish = () => {
+                kaiju.style[prop] = endVal + 'px';
+                kaijuAttack(kaiju, type);
+                setTimeout(() => {
+                    const oa = { opacity: 1 }; oa[prop] = endVal + 'px';
+                    const ob = { opacity: 0 }; ob[prop] = startVal + 'px';
+                    kaiju.animate([oa, ob], { duration: 1500, easing: 'ease-in', fill: 'forwards' }).onfinish = () => kaiju.remove();
+                }, 2700);
+            };
+        }
+
+        function scheduleKaiju() {
+            const delay = Math.random() * 30000 + 40000;   // roughly every 40-70s
+            setTimeout(() => { createKaiju(); scheduleKaiju(); }, delay);
+        }
+
+        // ====================================================================
+        //  SYNTHWAVE MUSIC ENGINE (original, generated with Web Audio)
+        // ====================================================================
+        let audioCtx = null, musicGain = null, musicOn = false, schedulerTimer = null;
+        let step16 = 0, barCount = 0, nextNoteTime = 0;
+        const BPM = 150;
+        // Driving battle loop: Am - F - G - E(dom) in A minor
+        const PROG = [
+            { root: 45, notes: [57, 60, 64] },  // Am
+            { root: 41, notes: [53, 57, 60] },  // F
+            { root: 43, notes: [55, 59, 62] },  // G
+            { root: 40, notes: [52, 56, 59] }   // E (major -> tension)
+        ];
+        const LEAD_PATTERN = [0, 2, 1, 2, 0, 1, 2, 1, 0, 2, 1, 0, 2, 1, 2, 0];
+        const LEAD_OCT = [12, 12, 12, 24, 12, 12, 24, 12, 12, 24, 12, 12, 24, 12, 12, 24];
+        const midiFreq = m => 440 * Math.pow(2, (m - 69) / 12);
+
+        function tone(type, freq, t, dur, peak, lp, det) {
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.type = type; o.frequency.value = freq;
+            if (det) o.detune.value = det;
+            let last = o;
+            if (lp) {
+                const f = audioCtx.createBiquadFilter();
+                f.type = 'lowpass'; f.frequency.value = lp;
+                o.connect(f); last = f;
+            }
+            last.connect(g); g.connect(musicGain);
+            g.gain.setValueAtTime(0.0001, t);
+            g.gain.exponentialRampToValueAtTime(peak, t + 0.008);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+            o.start(t); o.stop(t + dur + 0.03);
+        }
+        function noiseHit(t, dur, peak, hp) {
+            const len = Math.max(1, Math.floor(audioCtx.sampleRate * dur));
+            const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+            const d = buf.getChannelData(0);
+            for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+            const s = audioCtx.createBufferSource(); s.buffer = buf;
+            const f = audioCtx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hp;
+            const g = audioCtx.createGain();
+            s.connect(f); f.connect(g); g.connect(musicGain);
+            g.gain.setValueAtTime(peak, t);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+            s.start(t); s.stop(t + dur);
+        }
+        function kick(t) {
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.connect(g); g.connect(musicGain);
+            o.frequency.setValueAtTime(130, t);
+            o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+            g.gain.setValueAtTime(0.9, t);
+            g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+            o.start(t); o.stop(t + 0.2);
+        }
+        function snare(t) {
+            noiseHit(t, 0.18, 0.35, 1400);
+            tone('triangle', 180, t, 0.14, 0.18, 2000);
+        }
+        function scheduleStep(step, t) {
+            const chord = PROG[barCount % PROG.length];
+            const phrase = barCount % 4;
+            // --- drums ---
+            if (step === 0 || step === 4 || step === 8 || step === 12) kick(t);
+            if (step === 7 || step === 10) kick(t);              // syncopated drive
+            if (step === 4 || step === 12) snare(t);             // backbeat
+            if (phrase === 3 && (step === 13 || step === 14 || step === 15)) snare(t); // fill
+            noiseHit(t, step % 2 ? 0.03 : 0.05, step % 2 ? 0.06 : 0.11, 9000); // busy 16th hats
+            if (step === 0 && phrase === 0) noiseHit(t, 0.45, 0.13, 2500);      // crash on the "1"
+            // --- bass: pumping octave eighths ---
+            if (step % 2 === 0) {
+                const oct = ((step / 2) % 2 === 0) ? 0 : 12;
+                tone('sawtooth', midiFreq(chord.root + oct), t, 0.15, 0.34, 1000);
+            }
+            // --- lead riff (16ths) with a detuned layer for grit ---
+            const li = LEAD_PATTERN[step] % chord.notes.length;
+            const lf = midiFreq(chord.notes[li] + LEAD_OCT[step]);
+            tone('square', lf, t, 0.10, 0.12, 3800, 0);
+            tone('square', lf, t, 0.10, 0.06, 3800, 9);
+            // --- power stabs twice a bar ---
+            if (step === 0 || step === 8) chord.notes.forEach(n => tone('sawtooth', midiFreq(n + 12), t, 0.16, 0.09, 2400));
+            // --- pad underneath ---
+            if (step === 0) chord.notes.forEach(n => tone('sawtooth', midiFreq(n - 12), t, 1.4, 0.038, 1100));
+        }
+        function scheduler() {
+            const sixteenth = 60 / BPM / 4;
+            while (nextNoteTime < audioCtx.currentTime + 0.12) {
+                scheduleStep(step16, nextNoteTime);
+                nextNoteTime += sixteenth;
+                step16++;
+                if (step16 >= 16) { step16 = 0; barCount++; }
+            }
+        }
+        let sfxGain = null;
+        function ensureAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                musicGain = audioCtx.createGain();
+                musicGain.gain.value = 0.2;
+                musicGain.connect(audioCtx.destination);
+                sfxGain = audioCtx.createGain();
+                sfxGain.gain.value = 0.5;
+                sfxGain.connect(audioCtx.destination);
+            }
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+        function startMusic() {
+            ensureAudio();
+            step16 = 0; barCount = 0;
+            nextNoteTime = audioCtx.currentTime + 0.1;
+            schedulerTimer = setInterval(scheduler, 25);
+            musicOn = true;
+            musicToggle.textContent = '♪ MUSIC: ON';
+            musicToggle.classList.add('on');
+        }
+        function stopMusic() {
+            if (schedulerTimer) clearInterval(schedulerTimer);
+            schedulerTimer = null;
+            musicOn = false;
+            musicToggle.textContent = '♪ MUSIC: OFF';
+            musicToggle.classList.remove('on');
+            if (audioCtx) audioCtx.suspend();
+        }
+        // --- Sound effects (share the audio context, independent of music) ---
+        function sBlip(freq, dur, type, peak, slideTo) {
+            if (!audioCtx || !sfxGain) return;
+            const now = audioCtx.currentTime;
+            const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+            o.type = type || 'square';
+            o.frequency.setValueAtTime(freq, now);
+            if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, now + dur);
+            o.connect(g); g.connect(sfxGain);
+            g.gain.setValueAtTime(peak || 0.2, now);
+            g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+            o.start(now); o.stop(now + dur + 0.02);
+        }
+        function sNoise(dur, peak, freq) {
+            if (!audioCtx || !sfxGain) return;
+            const now = audioCtx.currentTime;
+            const len = Math.max(1, Math.floor(audioCtx.sampleRate * dur));
+            const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+            const d = buf.getChannelData(0);
+            for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+            const s = audioCtx.createBufferSource(); s.buffer = buf;
+            const f = audioCtx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq || 800; f.Q.value = 0.6;
+            const g = audioCtx.createGain();
+            s.connect(f); f.connect(g); g.connect(sfxGain);
+            g.gain.setValueAtTime(peak || 0.2, now);
+            g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+            s.start(now); s.stop(now + dur);
+        }
+        const sfxMove = () => sBlip(200, 0.04, 'square', 0.08);
+        const sfxRotate = () => sBlip(340, 0.05, 'square', 0.10);
+        const sfxLock = () => sBlip(150, 0.06, 'triangle', 0.14, 90);
+        function sfxDrop() { sBlip(520, 0.14, 'sawtooth', 0.10, 70); sNoise(0.12, 0.08, 500); }
+        function sfxZap() { sBlip(1000, 0.07, 'square', 0.12, 200); }
+        function sfxLine(n) {
+            for (let i = 0; i <= Math.min(3, n); i++) setTimeout(() => sBlip(420 + i * 160 + n * 60, 0.12, 'square', 0.12), i * 55);
+            if (n >= 4) sNoise(0.4, 0.16, 1200);
+        }
+        function sfxLevel() { [0, 4, 7, 12].forEach((s, i) => setTimeout(() => sBlip(midiFreq(69 + s), 0.14, 'square', 0.13), i * 70)); }
+        function sfxGameOver() { [0, -3, -6, -12].forEach((s, i) => setTimeout(() => sBlip(midiFreq(64 + s), 0.3, 'sawtooth', 0.16, midiFreq(60 + s)), i * 160)); }
+        function sfxRoar() { sNoise(0.55, 0.3, 200); sBlip(90, 0.5, 'sawtooth', 0.22, 46); }
+
+        musicToggle.addEventListener('click', () => { musicOn ? stopMusic() : startMusic(); });
+        // ==================== end music ===================================
+
+        const controlsActions = {
+            '.left': () => playerMove(-1), '.right': () => playerMove(1),
+            '.down': () => playerDrop(), '.up': () => playerRotate(),
+            '.drop': () => playerHardDrop(), '#pauseButton': togglePause,
+            '#resumeButton': togglePause, '#restartButton': resetGame
+        };
+        for (const [selector, action] of Object.entries(controlsActions)) {
+            document.querySelector(selector)?.addEventListener('click', () => {
+                ensureAudio();
+                if (isGameOver && selector !== '#restartButton') return;
+                if (isPaused && !['#pauseButton', '#resumeButton'].includes(selector)) return;
+                action();
+            });
+        }
+        document.addEventListener('keydown', (event) => {
+            ensureAudio();
+            if (isGameOver) return;
+            if (event.key === ' ' || event.key.toLowerCase() === 'p') {
+                event.preventDefault();
+                togglePause();
+                return;
+            }
+            if (isPaused) return;
+            const keyMap = {
+                'arrowleft': () => playerMove(-1), 'a': () => playerMove(-1),
+                'arrowright': () => playerMove(1), 'd': () => playerMove(1),
+                'arrowdown': () => playerDrop(), 's': () => playerDrop(),
+                'arrowup': () => playerRotate(), 'w': () => playerRotate(),
+                'enter': () => playerHardDrop()
+            };
+            keyMap[event.key.toLowerCase()]?.();
+        });
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        // --- Start Game & Timers ---
+        document.body.style.background = DYNAMIC_BACKGROUNDS[0];
+        resetGame();
+        resizeGame();
+        initCityscape();
+
+        window.addEventListener('resize', () => {
+            resizeGame();
+            resizeCityscape();
+            if(!isPaused) draw();
+        });
+
+        setInterval(() => {
+            backgroundChangeTimer--;
+            if (backgroundChangeTimer <= 0) {
+                cycleCity();
+                backgroundChangeTimer = BACKGROUND_TIMER_DURATION;
+            }
+        }, 1000);
+
+        setInterval(startMeteorShower, 15000);
+        setInterval(createFlyingSaucer, 45000);
+        setTimeout(runRandomSpecialEvent, 20000);
+        setTimeout(() => { createKaiju(); scheduleKaiju(); }, 12000);
+
+    </script>
+</body>
+</html>
