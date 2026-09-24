@@ -1011,12 +1011,30 @@
             return false;
         }
 
-        function createExplosion(x, y, color) {
+        // Cache of preloaded Image objects for themed particle art, keyed by src.
+        // Reused across every explosion rather than constructing a new Image per
+        // particle - these are small stamps drawn many times per frame.
+        const particleImageCache = {};
+        function getParticleImage(src) {
+            if (!particleImageCache[src]) {
+                const img = new Image();
+                img.src = src;
+                particleImageCache[src] = img;
+            }
+            return particleImageCache[src];
+        }
+
+        function createExplosion(x, y, color, images) {
             for (let i = 0; i < 15; i++) {
+                // Mix themed sprites with plain squares rather than replacing them
+                // outright - keeps some visual variety, and degrades gracefully to
+                // all-squares if `images` is empty/undefined (e.g. UFO laser hits).
+                const useThemed = images && images.length && Math.random() < 0.6;
                 particles.push({
                     x: x + 0.5, y: y + 0.5,
                     vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.4,
-                    size: Math.random() * 0.45 + 0.15, color: color, life: 80
+                    size: Math.random() * 0.45 + 0.15, color: color, life: 80,
+                    img: useThemed ? getParticleImage(images[Math.floor(Math.random() * images.length)]) : null
                 });
             }
         }
@@ -1032,8 +1050,14 @@
         function drawParticles() {
             for (const p of particles) {
                 context.globalAlpha = Math.max(0, p.life / 80);
-                context.fillStyle = p.color;
-                context.fillRect(p.x, p.y, p.size, p.size);
+                if (p.img && p.img.complete && p.img.naturalWidth) {
+                    context.drawImage(p.img, p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+                } else {
+                    // Also the fallback while a themed image is still loading, not just
+                    // for the no-image case - avoids a blank gap on an explosion's first frame.
+                    context.fillStyle = p.color;
+                    context.fillRect(p.x, p.y, p.size, p.size);
+                }
             }
             context.globalAlpha = 1.0;
         }
@@ -1322,10 +1346,10 @@
             isLeftToRightShower = !isLeftToRightShower;
         }
 
-        function destroyBlock(x, y) {
+        function destroyBlock(x, y, particleImages) {
             if (board[y] && board[y][x] > 0) {
                 const color = COLORS[board[y][x]];
-                createExplosion(x, y, color);
+                createExplosion(x, y, color, particleImages);
                 sfxZap();
                 board[y][x] = 0;
             }
@@ -1518,9 +1542,16 @@
         // procedural sprite automatically - drop the art in and it upgrades itself,
         // nothing else to wire up. Expected filenames match the reference art:
         // assets/kaiju/{zorgox,gyro-moth,rock-tort,tendril-klack}.png
+        //
+        // `beamImage` replaces the plain CSS gradient bar in createAtomicBreath()
+        // with themed beam art, same missing-file fallback as `image`. Only ZORGOX
+        // and GYRO-MOTH have one so far - ROCK-TORT and TENDRIL-KLACK keep the
+        // gradient bar until their beam art exists.
+        // `particleImages`, if set, mixes themed sprites into that kaiju's impact
+        // explosions (see createExplosion) instead of plain colored squares.
         const KAIJU_TYPES = [
-            { name: 'ZORGOX', image: 'assets/kaiju/zorgox.png', map: KAIJU_MAP, palette: KAIJU_PALETTE, entrance: 'left', origin: [0.88, 0.27], glow: '#0DFF72', beam: ['#B06AFF', '#E8D9FF', '#0DC2FF'] },
-            { name: 'GYRO-MOTH', image: 'assets/kaiju/gyro-moth.png', map: MOTH_MAP, palette: MOTH_PALETTE, entrance: 'left', origin: [0.5, 0.82], glow: '#5EA1FF', beam: ['#4FC3FF', '#DCF3FF', '#7A5CFF'] },
+            { name: 'ZORGOX', image: 'assets/kaiju/zorgox.png', beamImage: 'assets/kaiju/zorgox-beam.png', map: KAIJU_MAP, palette: KAIJU_PALETTE, entrance: 'left', origin: [0.88, 0.27], glow: '#0DFF72', beam: ['#B06AFF', '#E8D9FF', '#0DC2FF'] },
+            { name: 'GYRO-MOTH', image: 'assets/kaiju/gyro-moth.png', beamImage: 'assets/kaiju/gyro-moth-beam.png', particleImages: ['assets/kaiju/gyro-moth-cloud.png', 'assets/kaiju/gyro-moth-particles.png'], map: MOTH_MAP, palette: MOTH_PALETTE, entrance: 'left', origin: [0.5, 0.82], glow: '#5EA1FF', beam: ['#4FC3FF', '#DCF3FF', '#7A5CFF'] },
             { name: 'ROCK-TORT', image: 'assets/kaiju/rock-tort.png', map: ROCK_MAP, palette: ROCK_PALETTE, entrance: 'right', origin: [0.05, 0.30], glow: '#FF6B1A', beam: ['#FF3B1A', '#FFD24A', '#FF8A1A'] },
             { name: 'TENDRIL-KLACK', image: 'assets/kaiju/tendril-klack.png', map: KRK_MAP, palette: KRK_PALETTE, entrance: 'right', origin: [0.5, 0.33], glow: '#2FFFE0', beam: ['#2FFFE0', '#E0FFFA', '#5EFFC7'] }
         ];
@@ -1700,7 +1731,22 @@
             return kaiju;
         }
 
-        function createAtomicBreath(startX, startY, endX, endY, colors, onComplete) {
+        // Kaiju beam art is preloaded once at game start (see preloadBeamImages)
+        // rather than checked with an <img>.onerror per shot, since a beam only
+        // lives ~550ms - there's no time for an async load to resolve mid-attack.
+        // 'ok' -> use the art, 'failed'/unset -> fall back to the gradient bar.
+        const beamImageStatus = {};
+        function preloadBeamImages() {
+            KAIJU_TYPES.forEach(type => {
+                if (!type.beamImage || beamImageStatus[type.beamImage]) return;
+                const img = new Image();
+                img.onload = () => { beamImageStatus[type.beamImage] = 'ok'; };
+                img.onerror = () => { beamImageStatus[type.beamImage] = 'failed'; };
+                img.src = type.beamImage;
+            });
+        }
+
+        function createAtomicBreath(startX, startY, endX, endY, colors, onComplete, beamImage) {
             const beam = document.createElement('div');
             beam.classList.add('atomic-breath');
             const length = Math.hypot(endX - startX, endY - startY);
@@ -1710,7 +1756,14 @@
             beam.style.left = `${startX}px`;
             beam.style.top = `${startY}px`;
             beam.style.transform = `rotate(${angle}deg)`;
-            beam.style.background = `linear-gradient(90deg, ${colors[0]}, ${colors[1]}, ${colors[2]})`;
+            if (beamImage && beamImageStatus[beamImage] === 'ok') {
+                beam.style.background = 'none';
+                beam.style.backgroundImage = `url(${beamImage})`;
+                beam.style.backgroundSize = '100% 100%';
+                beam.style.backgroundRepeat = 'no-repeat';
+            } else {
+                beam.style.background = `linear-gradient(90deg, ${colors[0]}, ${colors[1]}, ${colors[2]})`;
+            }
             beam.style.filter = `drop-shadow(0 0 10px ${colors[0]}) drop-shadow(0 0 5px ${colors[2]})`;
             document.body.appendChild(beam);
             beam.animate([
@@ -1751,7 +1804,7 @@
                         setTimeout(() => {
                             const endX = canvasRect.left + (t.x * BLOCK_SIZE) + (BLOCK_SIZE / 2);
                             const endY = canvasRect.top + (t.y * BLOCK_SIZE) + (BLOCK_SIZE / 2);
-                            createAtomicBreath(mouthX, mouthY, endX, endY, type.beam, () => destroyBlock(t.x, t.y));
+                            createAtomicBreath(mouthX, mouthY, endX, endY, type.beam, () => destroyBlock(t.x, t.y, type.particleImages), type.beamImage);
                         }, i * 350);
                     }
                 }
@@ -2061,6 +2114,7 @@
         resizeGame();
         initCityscape();
         gameCenterSignIn();
+        preloadBeamImages();
 
         window.addEventListener('resize', () => {
             resizeGame();
