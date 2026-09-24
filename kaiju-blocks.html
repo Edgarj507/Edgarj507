@@ -406,6 +406,7 @@
                 <div class="info-box"><h2>SCORE</h2><p id="score">0</p></div>
                 <div class="info-box"><h2>LINES</h2><p id="lines">0</p></div>
                 <div class="info-box"><h2>LEVEL</h2><p id="level">1</p></div>
+                <div class="info-box"><h2>LIVES</h2><p id="livesDisplay">4</p></div>
                 <div class="preview-box"><h2>NEXT</h2><canvas id="preview" width="120" height="120"></canvas></div>
             </div>
         </div>
@@ -423,6 +424,8 @@
         <div class="modal-content">
             <h2>GAME OVER</h2>
             <p>Your score: <span id="finalScore">0</span></p>
+            <p id="continueError" style="display:none; color:#f78166; font-size:0.7em;"></p>
+            <button id="continueButton">Continue</button>
             <button id="restartButton">Play Again</button>
         </div>
     </div>
@@ -435,12 +438,15 @@
         const scoreEl = document.getElementById('score');
         const linesEl = document.getElementById('lines');
         const levelEl = document.getElementById('level');
+        const livesEl = document.getElementById('livesDisplay');
         const pauseButton = document.getElementById('pauseButton');
         const pauseOverlay = document.getElementById('pauseOverlay');
         const resumeButton = document.getElementById('resumeButton');
         const gameOverModal = document.getElementById('gameOverModal');
         const finalScoreEl = document.getElementById('finalScore');
         const restartButton = document.getElementById('restartButton');
+        const continueButton = document.getElementById('continueButton');
+        const continueErrorEl = document.getElementById('continueError');
         const creditElement = document.querySelector('.credit');
         const cityscape = document.getElementById('cityscape');
         const cityCtx = cityscape.getContext('2d');
@@ -456,6 +462,10 @@
         let board, score, lines, level, dropCounter, dropInterval, lastTime;
         let isGameOver = false;
         let isPaused = false;
+        const STARTING_LIVES = 4;
+        const CONTINUE_PRICE_FALLBACK = '$0.25'; // shown only if the native price lookup fails
+        let lives = STARTING_LIVES;
+        let continuePurchaseInFlight = false;
         let animationFrameId;
         let particles = [];
         let isCreditVisible = true;
@@ -1041,6 +1051,7 @@
 
         function updateScore() {
             scoreEl.innerText = score; linesEl.innerText = lines; levelEl.innerText = level;
+            livesEl.innerText = lives;
         }
 
         function rotate(matrix) {
@@ -1095,6 +1106,7 @@
                     document.querySelector('.game-container').style.visibility = 'hidden';
                     document.querySelector('.controls').style.visibility = 'hidden';
                     gameOverModal.style.display = 'flex';
+                    prepareContinueButton();
                 } else {
                     animationFrameId = requestAnimationFrame(update);
                 }
@@ -1137,6 +1149,87 @@
             }));
         }
 
+        // Sets the modal's continue button to either "free life" or "paid" mode
+        // and wires its handler. Called each time the game-over modal is shown.
+        function prepareContinueButton() {
+            continueErrorEl.style.display = 'none';
+            continueButton.disabled = false;
+            if (lives > 0) {
+                continueButton.textContent = `CONTINUE (${lives} LEFT)`;
+                continueButton.onclick = () => continueAfterGameOver(false);
+                return;
+            }
+            continueButton.textContent = `CONTINUE — ${CONTINUE_PRICE_FALLBACK}`;
+            continueButton.onclick = () => continueAfterGameOver(true);
+            const iap = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.ContinuePurchase;
+            if (iap) {
+                // Replace the fallback label with StoreKit's real localized price once it loads.
+                iap.getPrice().then(result => {
+                    if (result && result.priceString) continueButton.textContent = `CONTINUE — ${result.priceString}`;
+                }).catch(() => {});
+            }
+        }
+
+        async function continueAfterGameOver(requiresPayment) {
+            if (continuePurchaseInFlight) return;
+            continueErrorEl.style.display = 'none';
+
+            if (!requiresPayment) {
+                lives--;
+                resumeAfterContinue();
+                return;
+            }
+
+            const iap = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.ContinuePurchase;
+            if (!iap) {
+                // Plain-browser / non-Capacitor context: no real StoreKit to charge through.
+                continueErrorEl.textContent = 'Purchases are only available in the App Store version.';
+                continueErrorEl.style.display = 'block';
+                return;
+            }
+
+            continuePurchaseInFlight = true;
+            continueButton.disabled = true;
+            continueButton.textContent = 'PROCESSING…';
+            try {
+                const result = await iap.purchase();
+                if (result && result.success) {
+                    resumeAfterContinue();
+                } else {
+                    continueErrorEl.textContent = result && result.error === 'cancelled'
+                        ? 'Purchase cancelled.' : 'Purchase failed. Try again.';
+                    continueErrorEl.style.display = 'block';
+                    prepareContinueButton();
+                }
+            } catch (err) {
+                continueErrorEl.textContent = 'Purchase failed. Try again.';
+                continueErrorEl.style.display = 'block';
+                prepareContinueButton();
+            } finally {
+                continuePurchaseInFlight = false;
+            }
+        }
+
+        // Board can't stay topped-out or the next piece re-collides instantly, so a
+        // continue (free or paid) wipes the board but keeps score/lines/level intact.
+        function clearBoardKeepProgress() {
+            board = createBoard();
+            particles = [];
+            dropCounter = 0;
+            playerReset();
+        }
+
+        function resumeAfterContinue() {
+            clearBoardKeepProgress();
+            gameOverModal.style.display = 'none';
+            document.querySelector('.game-container').style.visibility = 'visible';
+            document.querySelector('.controls').style.visibility = 'visible';
+            isGameOver = false;
+            updateScore();
+            lastTime = performance.now();
+            update();
+        }
+
         function resizeGame() {
             const canvasWidth = canvas.clientWidth;
             BLOCK_SIZE = canvasWidth / COLS;
@@ -1152,7 +1245,7 @@
             document.querySelector('.controls').style.visibility = 'visible';
             isGameOver = false; isPaused = false;
             board = createBoard();
-            score = 0; lines = 0; level = 1;
+            score = 0; lines = 0; level = 1; lives = STARTING_LIVES;
             dropInterval = 1000;
             lastTime = 0; dropCounter = 0;
             particles = [];
@@ -1583,7 +1676,9 @@
                     }
                 }
                 if (targets.length > 0) {
-                    const count = Math.random() < 0.5 ? 1 : 2;
+                    // Difficulty scaling: original was always 1-2 blocks; now grows toward 1-6 by high levels.
+                    const maxPerAttack = Math.min(6, 2 + Math.floor(level / 8));
+                    const count = 1 + Math.floor(Math.random() * maxPerAttack);
                     const canvasRect = canvas.getBoundingClientRect();
                     for (let i = 0; i < count && targets.length > 0; i++) {
                         const idx = Math.floor(Math.random() * targets.length);
@@ -1652,7 +1747,10 @@
         }
 
         function scheduleKaiju() {
-            const delay = Math.random() * 30000 + 40000;   // roughly every 40-70s
+            // Difficulty scaling: starts at the original 40-70s window, tightens to 15-40s by high levels.
+            const minDelay = Math.max(15000, 40000 - level * 250);
+            const maxDelay = Math.max(minDelay + 10000, 70000 - level * 300);
+            const delay = Math.random() * (maxDelay - minDelay) + minDelay;
             setTimeout(() => { createKaiju(); scheduleKaiju(); }, delay);
         }
 

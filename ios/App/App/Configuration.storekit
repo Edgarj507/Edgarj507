@@ -1,0 +1,35 @@
+{
+  "identifier" : "5A000000-0000-0000-0000-000000000001",
+  "nonRenewingSubscriptions" : [],
+  "products" : [
+    {
+      "displayPrice" : "0.29",
+      "familyShareable" : false,
+      "internalID" : "5A000000-0000-0000-0000-000000000002",
+      "localizations" : [
+        {
+          "description" : "Wipe the board and keep playing with your current score and level.",
+          "displayName" : "Continue",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.edgarj507.kaijublocks.continue",
+      "referenceName" : "Continue",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "0",
+    "_developerTeamID" : "0",
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 0,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : []
+  },
+  "subscriptionGroups" : [],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}
