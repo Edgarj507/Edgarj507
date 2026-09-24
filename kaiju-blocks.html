@@ -1409,132 +1409,18 @@
             'G': { color: '#0DFF72', cls: 'ufo-light b' }
         };
 
-        // Kaiju faces RIGHT (so it enters from the left and breathes toward the board)
-        const KAIJU_MAP = [
-            '..........gggg....',
-            '.........gggggg...',
-            '.......o.gggggg...',
-            '......o.ggggggerg.',
-            '.....o.ggggggggggg',
-            '......o.gggggkttkt',
-            '.....o.gggggggg...',
-            '....o..ggggggggg..',
-            '...o..gggggggggg..',
-            '...o.ggggggbbbggy.',
-            '..o.gggggbbbbbggy.',
-            '..o.gggggbbbbbg...',
-            '.o.ggggggbbbbg....',
-            'go.gggggggbbg.....',
-            'ggo.ggggggggg.....',
-            'ggo..gggggggg.....',
-            '.....gg...gg......',
-            '.....gg...gg......',
-            '.....gg...gg......',
-            '....ggg..ggg......',
-            '...yggg..gggy.....',
-            '..................'
-        ];
-        const KAIJU_PALETTE = {
-            'g': { color: '#2ECC40' }, 'b': { color: '#BFF2C6' },
-            'p': { color: '#CFEFFF', cls: 'plate' },
-            'o': { color: '#FF6B1A', cls: 'plate' },
-            'e': { color: '#FFFFFF' }, 'r': { color: '#FF3B3B' },
-            'k': { color: '#5A1010' }, 't': { color: '#FFFFFF' },
-            'y': { color: '#FFE138' }
-        };
-
-        // GYRO-MOTH (flies in from the top, beam from its underside)
-        const MOTH_MAP = [
-            '...a..............a...',
-            '....a............a....',
-            '.....a...bbbb...a.....',
-            '..WW.....beeb.....WW..',
-            '.WWww....bbbb....wwWW.',
-            'WWwwWs....bb....sWwwWW',
-            'WWwwWs....bb....sWwwWW',
-            '.WWwww....bb....wwwWW.',
-            '...Www....bb....wwW...',
-            '..WWww....bb....wwWW..',
-            '..WWww....bb....wwWW..',
-            '...Ww.....bb.....wW...',
-            '.........bbbb.........',
-            '.........bbbb.........',
-            '........b.bb.b........',
-            '.......a.b..b.a.......'
-        ];
-        const MOTH_PALETTE = {
-            'W': { color: '#FF5EA1' }, 'w': { color: '#7AD0FF' },
-            's': { color: '#FFD45E' }, 'b': { color: '#6A4A8A' },
-            'e': { color: '#E0FFFF' }, 'a': { color: '#FFD45E' }
-        };
-
-        // ROCK-TORT (stomps in from the right, faces left, fire breath)
-        const ROCK_MAP = [
-            '............C...C...',
-            '...........CC..CC...',
-            '.....ddd..dCCdCd....',
-            '...ddddd.dddCCd.....',
-            '.rreddddddddddd.....',
-            'mrrrdddddddddddd....',
-            'mmrrrdddddddddd.....',
-            '.rrrrddddddddd......',
-            '..rrddddddddd.......',
-            '..rrdddddddddd......',
-            '..rrdddddddddd......',
-            '...rddddddddd.......',
-            '...dddddddd.........',
-            '...rr....rr...rr....',
-            '...rr....rr...rr....',
-            '..ccc...ccc..ccc....'
-        ];
-        const ROCK_PALETTE = {
-            'r': { color: '#8A8A9A' }, 'd': { color: '#4A4A5C' },
-            'C': { color: '#FF4D6D', cls: 'plate' }, 'e': { color: '#FFCF3A' },
-            'm': { color: '#5A1010' }, 'c': { color: '#C9B070' }
-        };
-
-        // TENDRIL-KLACK (rises from the bottom, eye beam)
-        const KRK_MAP = [
-            '.......GGGGGGGG.......',
-            '.....GGGGGGGGGGGG.....',
-            '....GGGGGGGGGGGGGG....',
-            '...GGGGGGGGGGGGGGGG...',
-            '...GGGeeeeeeeeGGGGGG..',
-            '...GGeeiiiiiieeGGGGG..',
-            '...GGeiippppiieGGGGG..',
-            '...GGeiippppiieGGGGG..',
-            '...GGeeiiiiiieeGGGGG..',
-            '...GGGeeeeeeeeGGGGGG..',
-            '...GGGGGGGGGGGGGGGG...',
-            '...tGGGtGGtGGtGGGGt...',
-            '..ttGttGGtGGtGttGt....',
-            '..tGttGtGttGtGtGtt....',
-            '.ttGtGtGtGtGtGtGtt....',
-            '.tsGtsGtsGtsGtsGtt....',
-            'tt.tt..tt..tt..tt.....',
-            't...t...t...t...t.....'
-        ];
-        const KRK_PALETTE = {
-            'G': { color: '#2FAE9A' }, 't': { color: '#1F8578' },
-            'e': { color: '#FFFFFF' }, 'i': { color: '#FFD24A' },
-            'p': { color: '#161018' }, 's': { color: '#FF5EA1' }
-        };
-
         // The kaiju roster. origin = [fx,fy] fraction of the sprite where the
         // beam starts; entrance = which edge it comes in from.
         // All four now enter from the left/right screen edges only (no top/bottom),
         // small and mostly off-canvas so they don't cover the board - see createKaiju().
         //
-        // `image` points at a real sprite (transparent-background PNG/WebP) to use
-        // instead of the hand-coded pixel-grid in `map`/`palette`. If the file at
-        // that path 404s (not added yet), createKaijuElement() falls back to the
-        // procedural sprite automatically - drop the art in and it upgrades itself,
-        // nothing else to wire up. Expected filenames match the reference art:
-        // assets/kaiju/{zorgox,gyro-moth,rock-tort,tendril-klack}.png
+        // `image` is the real sprite (transparent-background PNG) for this kaiju.
+        // No procedural fallback anymore - if a file 404s, that spawn is just
+        // skipped (see createKaijuElement/createKaiju) rather than showing a
+        // different, unwanted design.
         //
         // `beamImage` replaces the plain CSS gradient bar in createAtomicBreath()
-        // with real beam art, same missing-file fallback as `image`. All four
-        // share one asset (assets/kaiju/beam.png) and are recolored per kaiju via
+        // with real beam art, same asset for all four, recolored per kaiju via
         // `beamHue`, a CSS hue-rotate() degree value computed from the art's own
         // sampled base hue (~201deg, cyan-blue) rather than guessed:
         //   red    = (0   - 201) mod 360 -> +159deg
@@ -1543,10 +1429,10 @@
         // `particleImages`, if set, mixes themed sprites into that kaiju's impact
         // explosions (see createExplosion) instead of plain colored squares.
         const KAIJU_TYPES = [
-            { name: 'ZORGOX', image: 'assets/kaiju/zorgox.png', beamImage: 'assets/kaiju/beam.png', map: KAIJU_MAP, palette: KAIJU_PALETTE, entrance: 'left', origin: [0.88, 0.27], glow: '#0DFF72', beam: ['#B06AFF', '#E8D9FF', '#0DC2FF'] },
-            { name: 'GYRO-MOTH', image: 'assets/kaiju/gyro-moth.png', beamImage: 'assets/kaiju/beam.png', particleImages: ['assets/kaiju/gyro-moth-cloud.png', 'assets/kaiju/gyro-moth-particles.png'], map: MOTH_MAP, palette: MOTH_PALETTE, entrance: 'left', origin: [0.5, 0.82], glow: '#5EA1FF', beam: ['#4FC3FF', '#DCF3FF', '#7A5CFF'] },
-            { name: 'ROCK-TORT', image: 'assets/kaiju/rock-tort.png', beamImage: 'assets/kaiju/beam.png', beamHue: 159, map: ROCK_MAP, palette: ROCK_PALETTE, entrance: 'right', origin: [0.05, 0.30], glow: '#FF6B1A', beam: ['#FF3B1A', '#FFD24A', '#FF8A1A'] },
-            { name: 'TENDRIL-KLACK', image: 'assets/kaiju/tendril-klack.png', beamImage: 'assets/kaiju/beam.png', beamHue: -81, map: KRK_MAP, palette: KRK_PALETTE, entrance: 'right', origin: [0.5, 0.33], glow: '#2FFFE0', beam: ['#2FFFE0', '#E0FFFA', '#5EFFC7'] }
+            { name: 'ZORGOX', image: 'assets/kaiju/zorgox.png', beamImage: 'assets/kaiju/beam.png', entrance: 'left', origin: [0.88, 0.27], glow: '#0DFF72', beam: ['#B06AFF', '#E8D9FF', '#0DC2FF'] },
+            { name: 'GYRO-MOTH', image: 'assets/kaiju/gyro-moth.png', beamImage: 'assets/kaiju/beam.png', particleImages: ['assets/kaiju/gyro-moth-cloud.png', 'assets/kaiju/gyro-moth-particles.png'], entrance: 'left', origin: [0.5, 0.82], glow: '#5EA1FF', beam: ['#4FC3FF', '#DCF3FF', '#7A5CFF'] },
+            { name: 'ROCK-TORT', image: 'assets/kaiju/rock-tort.png', beamImage: 'assets/kaiju/beam.png', beamHue: 159, entrance: 'right', origin: [0.05, 0.30], glow: '#FF6B1A', beam: ['#FF3B1A', '#FFD24A', '#FF8A1A'] },
+            { name: 'TENDRIL-KLACK', image: 'assets/kaiju/tendril-klack.png', beamImage: 'assets/kaiju/beam.png', beamHue: -81, entrance: 'right', origin: [0.5, 0.33], glow: '#2FFFE0', beam: ['#2FFFE0', '#E0FFFA', '#5EFFC7'] }
         ];
 
         function buildSprite(map, palette) {
@@ -1706,21 +1592,12 @@
         function createKaijuElement(type) {
             const kaiju = document.createElement('div');
             kaiju.classList.add('kaiju');
-            if (type.image) {
-                const img = document.createElement('img');
-                img.alt = '';
-                img.style.cssText = 'width:100%;height:100%;display:block;image-rendering:pixelated;';
-                // Art file not added yet (or failed to load) - fall back to the
-                // procedural pixel sprite rather than showing a broken image.
-                img.addEventListener('error', () => {
-                    img.remove();
-                    kaiju.innerHTML = buildSprite(type.map, type.palette);
-                }, { once: true });
-                img.src = type.image;
-                kaiju.appendChild(img);
-            } else {
-                kaiju.innerHTML = buildSprite(type.map, type.palette);
-            }
+            const img = document.createElement('img');
+            img.alt = '';
+            img.style.cssText = 'width:100%;height:100%;display:block;image-rendering:pixelated;';
+            img.addEventListener('error', () => console.warn(`Kaiju art failed to load: ${type.image}`), { once: true });
+            img.src = type.image;
+            kaiju.appendChild(img);
             return kaiju;
         }
 
@@ -1814,13 +1691,10 @@
             if (isPaused || isGameOver) return;
             const type = KAIJU_TYPES[Math.floor(Math.random() * KAIJU_TYPES.length)];
             const kaiju = createKaijuElement(type);
-            const fallbackW = Math.max(...type.map.map(r => r.length));
-            const fallbackH = type.map.length;
 
-            // Sizing/positioning/animation needs the sprite's real aspect ratio.
-            // For the procedural sprite that's known immediately; for a real image
-            // it's only known once the browser has loaded it, so this is deferred
-            // behind onload/onerror below rather than run synchronously.
+            // Sizing/positioning/animation needs the sprite's real pixel dimensions,
+            // which for an <img> aren't known until the browser has loaded it - this
+            // is deferred behind onload below rather than run synchronously.
             const positionAndAnimate = (mapW, mapH) => {
                 const vw = window.innerWidth, vh = window.innerHeight;
                 // Small and mostly off-canvas: they peek in from the side edges to
@@ -1860,15 +1734,12 @@
             };
 
             const img = kaiju.querySelector('img');
-            if (!img) {
-                positionAndAnimate(fallbackW, fallbackH); // no image field - procedural sprite, ready now
-            } else if (img.complete && img.naturalWidth) {
+            if (img.complete && img.naturalWidth) {
                 positionAndAnimate(img.naturalWidth, img.naturalHeight); // cached, already loaded
             } else {
                 img.addEventListener('load', () => positionAndAnimate(img.naturalWidth, img.naturalHeight), { once: true });
-                // createKaijuElement()'s own error handler swaps in the procedural sprite;
-                // fall back to its dimensions once that swap has happened.
-                img.addEventListener('error', () => positionAndAnimate(fallbackW, fallbackH), { once: true });
+                // No procedural sprite to fall back to anymore - if the art fails to
+                // load this spawn is simply skipped (createKaijuElement already logs why).
             }
         }
 
