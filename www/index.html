@@ -223,8 +223,42 @@
         }
         .audio-toggle:active { transform: scale(0.95); }
         .audio-toggle.on { color: #0DFF72; border-color: #0DFF72; }
-        #musicToggle { top: 14px; }
-        #fxToggle { top: 54px; }
+        #settingsButton { top: 14px; }
+        /* Inside the settings modal the toggle buttons flow with the panel
+           instead of floating at a fixed screen position. Background/border/
+           color are re-declared here since .modal-content button otherwise
+           outranks the plain .audio-toggle rule and flattens them into
+           generic solid-green buttons. */
+        .settings-content .audio-toggle {
+            position: static;
+            width: 100%;
+            font-size: 0.65em;
+            padding: 12px 14px;
+            background-color: var(--button-bg);
+            color: var(--text-color);
+            border: 2px solid var(--button-border);
+            border-radius: 6px;
+        }
+        .settings-content .audio-toggle.on { color: #0DFF72; border-color: #0DFF72; }
+        .settings-content { min-width: 260px; }
+        .volume-row {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 100%;
+        }
+        .volume-row label {
+            font-size: 0.6em;
+            letter-spacing: 1px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .volume-row #volumeValue { color: #0DFF72; }
+        #volumeSlider {
+            width: 100%;
+            accent-color: #0DFF72;
+            cursor: pointer;
+        }
         #crt {
             position: fixed;
             inset: 0;
@@ -344,8 +378,7 @@
 </head>
 <body>
     <div id="cityscapePhoto"></div>
-    <button id="musicToggle" class="audio-toggle">&#9834; MUSIC: OFF</button>
-    <button id="fxToggle" class="audio-toggle on">&#128266; FX: ON</button>
+    <button id="settingsButton" class="audio-toggle">&#9881; SETTINGS</button>
     <div id="cityName" class="city-name"></div>
     <div class="credit">CREATED BY EDGAR R.</div>
     <div class="game-wrapper">
@@ -387,6 +420,19 @@
 
     <div id="crt"></div>
 
+    <div id="settingsModal" class="modal" style="position:fixed">
+        <div class="modal-content settings-content">
+            <h2>SETTINGS</h2>
+            <button id="musicToggle" class="audio-toggle">&#9834; MUSIC: OFF</button>
+            <button id="fxToggle" class="audio-toggle on">&#128266; FX: ON</button>
+            <div class="volume-row">
+                <label for="volumeSlider">VOLUME <span id="volumeValue">100%</span></label>
+                <input type="range" id="volumeSlider" min="0" max="100" value="100">
+            </div>
+            <button id="closeSettingsButton">CLOSE</button>
+        </div>
+    </div>
+
     <div id="gameOverModal" class="modal" style="position:fixed">
         <div class="modal-content">
             <h2>GAME OVER</h2>
@@ -419,6 +465,11 @@
         const cityNameEl = document.getElementById('cityName');
         const musicToggle = document.getElementById('musicToggle');
         const fxToggle = document.getElementById('fxToggle');
+        const settingsButton = document.getElementById('settingsButton');
+        const settingsModal = document.getElementById('settingsModal');
+        const closeSettingsButton = document.getElementById('closeSettingsButton');
+        const volumeSlider = document.getElementById('volumeSlider');
+        const volumeValueEl = document.getElementById('volumeValue');
 
         const COLS = 12;
         const ROWS = 24;
@@ -1312,7 +1363,7 @@
         //  exists, see the custom-audio block below. midiFreq stays: sfxLevel/
         //  sfxGameOver still use it for their little stingers.)
         // ====================================================================
-        let audioCtx = null, musicOn = false, fxOn = true;
+        let audioCtx = null, musicOn = false, fxOn = true, masterVolume = 1;
         const midiFreq = m => 440 * Math.pow(2, (m - 69) / 12);
 
         // --- Native bridge helpers (Haptics / Game Center) ---
@@ -1382,7 +1433,6 @@
         function probeCustomAudio(path) {
             if (customAudioStatus[path]) return;
             const el = new Audio();
-            el.volume = CUSTOM_SFX_VOLUME[path] ?? 1;
             el.oncanplaythrough = () => { customAudioStatus[path] = 'ok'; };
             el.onerror = () => { customAudioStatus[path] = 'failed'; };
             el.src = path;
@@ -1403,6 +1453,7 @@
             if (tracks.length === 0) return;
             currentMusicTrack = ((index % tracks.length) + tracks.length) % tracks.length;
             const el = customAudioElements[tracks[currentMusicTrack]];
+            el.volume = masterVolume;
             el.currentTime = 0;
             el.onended = () => { if (musicOn) playMusicTrack(currentMusicTrack + 1); };
             el.play().catch(() => {});
@@ -1418,8 +1469,38 @@
             if (pool.length === 0) return false;
             const path = pool[Math.floor(Math.random() * pool.length)];
             const el = customAudioElements[path];
+            el.volume = (CUSTOM_SFX_VOLUME[path] ?? 1) * masterVolume;
             try { el.currentTime = 0; el.play().catch(() => {}); } catch (e) {}
             return true;
+        }
+        // Live-updates the volume knob against whatever's already playing,
+        // so dragging the slider is heard immediately instead of waiting for
+        // the next track/sfx to start.
+        function applyMasterVolume() {
+            if (sfxGain) sfxGain.gain.value = 0.5 * masterVolume;
+            const tracks = getLoadedMusicTracks();
+            if (musicOn && tracks.length) {
+                const el = customAudioElements[tracks[currentMusicTrack]];
+                if (el) el.volume = masterVolume;
+            }
+        }
+        // fxOn and masterVolume persist across sessions (so the player doesn't
+        // have to re-tune comfort settings every load); musicOn deliberately
+        // doesn't - autoplay would be blocked without a fresh user gesture
+        // anyway, so MUSIC always starts OFF and the player opts back in.
+        function saveAudioPrefs() {
+            try { localStorage.setItem('kaijuBlocksAudioPrefs', JSON.stringify({ fxOn, masterVolume })); } catch (e) {}
+        }
+        function loadAudioPrefs() {
+            try {
+                const raw = localStorage.getItem('kaijuBlocksAudioPrefs');
+                if (!raw) return;
+                const prefs = JSON.parse(raw);
+                if (typeof prefs.fxOn === 'boolean') fxOn = prefs.fxOn;
+                if (typeof prefs.masterVolume === 'number' && isFinite(prefs.masterVolume)) {
+                    masterVolume = Math.min(1, Math.max(0, prefs.masterVolume));
+                }
+            } catch (e) {}
         }
 
         let sfxGain = null;
@@ -1427,7 +1508,7 @@
             if (!audioCtx) {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 sfxGain = audioCtx.createGain();
-                sfxGain.gain.value = 0.5;
+                sfxGain.gain.value = 0.5 * masterVolume;
                 sfxGain.connect(audioCtx.destination);
             }
             if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -1516,7 +1597,41 @@
             fxOn = !fxOn;
             fxToggle.textContent = fxOn ? '\u{1F50A} FX: ON' : '\u{1F507} FX: OFF';
             fxToggle.classList.toggle('on', fxOn);
+            saveAudioPrefs();
         });
+        volumeSlider.addEventListener('input', () => {
+            masterVolume = Number(volumeSlider.value) / 100;
+            volumeValueEl.textContent = `${volumeSlider.value}%`;
+            applyMasterVolume();
+            saveAudioPrefs();
+        });
+        // Pauses gameplay (input and the drop timer) for as long as the panel
+        // is open, but only if a run was actually in progress - reopening
+        // settings from the game-over/already-paused screens shouldn't
+        // un-pause things when closed.
+        let settingsPausedGame = false;
+        function openSettings() {
+            ensureAudio();
+            settingsPausedGame = !isPaused && !isGameOver;
+            if (settingsPausedGame) {
+                isPaused = true;
+                cancelAnimationFrame(animationFrameId);
+                pauseButton.textContent = 'RESUME';
+            }
+            settingsModal.style.display = 'flex';
+        }
+        function closeSettings() {
+            settingsModal.style.display = 'none';
+            if (settingsPausedGame) {
+                isPaused = false;
+                lastTime = performance.now();
+                update();
+                pauseButton.textContent = 'PAUSE';
+            }
+            settingsPausedGame = false;
+        }
+        settingsButton.addEventListener('click', openSettings);
+        closeSettingsButton.addEventListener('click', closeSettings);
         // ==================== end music ===================================
 
         const controlsActions = {
@@ -1561,6 +1676,11 @@
         gameCenterSignIn();
         preloadBeamImages();
         preloadCustomAudio();
+        loadAudioPrefs();
+        fxToggle.textContent = fxOn ? '\u{1F50A} FX: ON' : '\u{1F507} FX: OFF';
+        fxToggle.classList.toggle('on', fxOn);
+        volumeSlider.value = Math.round(masterVolume * 100);
+        volumeValueEl.textContent = `${volumeSlider.value}%`;
 
         window.addEventListener('resize', () => {
             resizeGame();
