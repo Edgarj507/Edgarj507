@@ -1,6 +1,6 @@
 # Custom music
 
-Currently filled in with 5 tracks that play as a looping playlist (in this
+Currently filled in with 6 tracks that play as a looping playlist (in this
 order) when the player toggles MUSIC: ON, advancing to the next track each
 time one ends and wrapping back to the first after the last:
 
@@ -10,6 +10,7 @@ neon-killswitch.mp3
 neon-killswitch-2.mp3
 neon-rush.mp3
 neon-armageddon.mp3
+neon-armageddon-2.mp3
 ```
 
 Any of these can be replaced or removed - a missing file is just skipped in
