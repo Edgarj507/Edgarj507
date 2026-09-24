@@ -14,10 +14,6 @@
             --button-bg: #21262d;
             --button-border: #444c56;
             --accent-color: #58a6ff;
-            --star-color1: rgba(255, 255, 255, 0.9);
-            --star-color2: rgba(255, 255, 255, 0.8);
-            --star-color3: rgba(255, 255, 255, 0.6);
-            --star-color4: rgba(255, 255, 255, 0.7);
         }
         html, body {
             /* native shell has no browser chrome to eat the notch/home-indicator area */
@@ -46,26 +42,6 @@
             transition: background 1.5s ease-in-out;
             position: relative;
             overflow: hidden;
-        }
-        body::before {
-            content: '';
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            z-index: -1;
-            background-image:
-                radial-gradient(var(--star-color1) 1px, transparent 2px),
-                radial-gradient(var(--star-color2) 1px, transparent 2px),
-                radial-gradient(var(--star-color3) 1px, transparent 3px),
-                radial-gradient(var(--star-color4) 1px, transparent 3px);
-            background-size: 550px 550px, 350px 350px, 250px 250px, 150px 150px;
-            background-position: 0 0, 40px 60px, 130px 270px, 70px 100px;
-            animation: move-stars 200s linear infinite;
-            transition: background-image 1s ease-in-out;
-        }
-        @keyframes move-stars {
-            from {background-position: 0 0, 40px 60px, 130px 270px, 70px 100px;}
-            to {background-position: -10000px 5000px, -10040px 5060px, -10130px 5270px, -10070px 5100px;}
         }
         .game-wrapper {
             position: relative;
@@ -203,14 +179,6 @@
         .modal-content button {
             background-color: #238636; color: white; padding: 10px 20px; border: none;
             border-radius: 5px; font-family: inherit; font-size: 1em; cursor: pointer;
-        }
-        .meteor {
-            position: fixed;
-            z-index: 0;
-            background: linear-gradient(to bottom, rgba(255, 255, 255, 0.8), transparent);
-            width: 2px;
-            height: 200px;
-            filter: drop-shadow(0 0 8px #fff);
         }
         /* Real skyline art (see PHOTO_CITIES), crossfaded between cities in cycleCity(). */
         #cityscapePhoto {
@@ -522,21 +490,6 @@
         const PIECES = 'TSZLIJO';
         let player = { pos: { x: 0, y: 0 }, matrix: null, next: null };
 
-        const starThemes = [
-            { c1: '#FFFFFF', c2: '#FFFFFF', c3: '#FFFFFF', c4: '#FFFFFF' }, { c1: '#FFFFFF', c2: '#ADD8E6', c3: '#87CEEB', c4: '#00BFFF' },
-            { c1: '#FFFFFF', c2: '#E6E6FA', c3: '#D8BFD8', c4: '#DA70D6' }, { c1: '#FFFFFF', c2: '#FFFFE0', c3: '#FFD700', c4: '#FFA500' },
-            { c1: '#FFFFFF', c2: '#FFC0CB', c3: '#E0FFFF', c4: '#AFEEEE' }, { c1: '#FFFFFF', c2: '#B0C4DE', c3: '#778899', c4: '#FFFFFF' },
-            { c1: '#FFFFFF', c2: '#FF6347', c3: '#FFA07A', c4: '#FF4500' },
-        ];
-        function updateStarColors(level) {
-            const themeIndex = Math.floor((level - 1) / 5) % starThemes.length;
-            const theme = starThemes[themeIndex];
-            const rootStyle = document.documentElement.style;
-            rootStyle.setProperty('--star-color1', `${theme.c1}E6`);
-            rootStyle.setProperty('--star-color2', `${theme.c2}CC`);
-            rootStyle.setProperty('--star-color3', `${theme.c3}B3`);
-            rootStyle.setProperty('--star-color4', `${theme.c4}FF`);
-        }
 
         const DYNAMIC_BACKGROUNDS = [
             'linear-gradient(160deg, #020024 0%, #090979 35%, #002147 100%)', 'linear-gradient(160deg, #370a3b 0%, #4a0d4e 35%, #870058 100%)',
@@ -817,7 +770,6 @@
                     const progress = (level - 1) / 99;
                     dropInterval = startSpeed - (startSpeed - endSpeed) * progress;
                     dropInterval = Math.max(endSpeed, dropInterval);
-                    updateStarColors(level);
                 }
             }
         }
@@ -1035,46 +987,12 @@
             particles = [];
             playerReset();
             updateScore();
-            updateStarColors(level);
             gameOverModal.style.display = 'none';
             pauseOverlay.style.display = 'none';
             pauseButton.textContent = 'PAUSE';
             update();
         }
 
-        let isLeftToRightShower = true;
-        function createMeteor(pathType) {
-            const meteor = document.createElement('div');
-            meteor.classList.add('meteor');
-            const viewportWidth = window.innerWidth, viewportHeight = window.innerHeight;
-            const randomOffsetX = Math.random() * 300 - 150, randomOffsetY = Math.random() * 300 - 150;
-            let startX, startY, endX, endY;
-            if (pathType === 'left-to-right') {
-                startX = -200 + randomOffsetX; startY = -200 + randomOffsetY;
-                endX = viewportWidth + 200; endY = viewportHeight + 200;
-            } else {
-                startX = viewportWidth + 200 + randomOffsetX; startY = -200 + randomOffsetY;
-                endX = -200; endY = viewportHeight + 200;
-            }
-            meteor.style.left = `${startX}px`;
-            meteor.style.top = `${startY}px`;
-            const angle = Math.atan2(endY - startY, endX - startX) * 180 / Math.PI + 90;
-            meteor.style.transform = `rotate(${angle}deg)`;
-            document.body.appendChild(meteor);
-            meteor.animate(
-                [{ left: `${startX}px`, top: `${startY}px` }, { left: `${endX}px`, top: `${endY}px` }],
-                { duration: Math.random() * 1000 + 700, easing: 'linear' }
-            ).onfinish = () => meteor.remove();
-        }
-
-        function startMeteorShower() {
-            const showerSize = 7;
-            const pathType = isLeftToRightShower ? 'left-to-right' : 'right-to-left';
-            for (let i = 0; i < showerSize; i++) {
-                setTimeout(() => createMeteor(pathType), i * 150);
-            }
-            isLeftToRightShower = !isLeftToRightShower;
-        }
 
         function destroyBlock(x, y, particleImages) {
             if (board[y] && board[y][x] > 0) {
@@ -1765,7 +1683,6 @@
             }
         }, 1000);
 
-        setInterval(startMeteorShower, 15000);
         setInterval(createFlyingSaucer, 45000);
         setTimeout(runRandomSpecialEvent, 20000);
         setTimeout(() => { createKaiju(); scheduleKaiju(); }, 12000);
