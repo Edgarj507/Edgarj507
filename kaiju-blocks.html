@@ -267,8 +267,15 @@
         .flying-saucer {
             position: fixed;
             z-index: 1;
-            width: 80px;
-            height: 40px;
+            /* Scales with viewport instead of a flat 80x40 - matches the real
+               saucer.png's ~1.21:1 aspect (250x207) so object-fit:contain on its
+               <img> never needs to compensate for a mismatched box. */
+            width: 20vw;
+            height: 16.5vw;
+            min-width: 140px;
+            min-height: 116px;
+            max-width: 220px;
+            max-height: 182px;
             filter: drop-shadow(0 0 8px #F538FF);
         }
         .ufo-light { animation: blink 0.5s infinite alternate; }
@@ -308,7 +315,7 @@
             filter: drop-shadow(0 0 8px #0DFF72) drop-shadow(0 0 4px #0DC2FF);
             transform-origin: left center;
             z-index: 3;
-            border-radius: 4px;
+            border-radius: 999px; /* always a full pill regardless of the JS-set thickness */
         }
         .laser-beam {
             position: fixed;
@@ -1355,7 +1362,7 @@
             beam.style.width = `${length}px`;
             // Scales with the board's own block size instead of a flat px value,
             // so it reads as a similarly-thick bolt on a phone and on a wide screen.
-            beam.style.height = `${Math.max(22, BLOCK_SIZE * 0.9)}px`;
+            beam.style.height = `${Math.max(34, BLOCK_SIZE * 1.5)}px`;
             beam.style.left = `${startX}px`;
             beam.style.top = `${startY}px`;
             beam.style.transform = `rotate(${angle}deg)`;
@@ -1459,11 +1466,12 @@
                 kaiju.style.top = restY + 'px';
                 prop = 'left';
                 if (type.entrance === 'left') {
-                    // Only ~20% of its width pokes past the board's left edge.
-                    restX = cr.left - kW * 0.80;
+                    // Only ~12% of its width pokes past the board's left edge -
+                    // standing back further than before, less crowding the board.
+                    restX = cr.left - kW * 0.88;
                     startVal = -kW; endVal = restX;
                 } else {
-                    restX = cr.right - kW * 0.20;
+                    restX = cr.right - kW * 0.12;
                     startVal = vw; endVal = restX;
                 }
                 kaiju.style[prop] = startVal + 'px';
