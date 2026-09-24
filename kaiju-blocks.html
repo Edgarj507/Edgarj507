@@ -283,6 +283,13 @@
             from { fill: #CFEFFF; }
             to { fill: #FFFFFF; }
         }
+        /* Image sprites have no .plate rects to target, so "charging" reads as a
+           brightness pulse on the whole sprite instead - same tell, different sprite type. */
+        .kaiju.charging img { animation: img-charge-glow 0.25s infinite alternate; }
+        @keyframes img-charge-glow {
+            from { filter: brightness(1) saturate(1); }
+            to { filter: brightness(1.6) saturate(1.4); }
+        }
         @keyframes kaiju-shake {
             0%   { transform: translate(0, 0); }
             25%  { transform: translate(-2px, 1px); }
@@ -1493,11 +1500,18 @@
         // beam starts; entrance = which edge it comes in from.
         // All four now enter from the left/right screen edges only (no top/bottom),
         // small and mostly off-canvas so they don't cover the board - see createKaiju().
+        //
+        // `image` points at a real sprite (transparent-background PNG/WebP) to use
+        // instead of the hand-coded pixel-grid in `map`/`palette`. If the file at
+        // that path 404s (not added yet), createKaijuElement() falls back to the
+        // procedural sprite automatically - drop the art in and it upgrades itself,
+        // nothing else to wire up. Expected filenames match the reference art:
+        // assets/kaiju/{zorgox,gyro-moth,rock-tort,tendril-klack}.png
         const KAIJU_TYPES = [
-            { name: 'ZORGOX', map: KAIJU_MAP, palette: KAIJU_PALETTE, entrance: 'left', origin: [0.88, 0.27], glow: '#0DFF72', beam: ['#0DFF72', '#E6FFF0', '#0DC2FF'] },
-            { name: 'GYRO-MOTH', map: MOTH_MAP, palette: MOTH_PALETTE, entrance: 'left', origin: [0.5, 0.82], glow: '#FF5EA1', beam: ['#FF5EA1', '#FFD6F2', '#B06AFF'] },
-            { name: 'ROCK-TORT', map: ROCK_MAP, palette: ROCK_PALETTE, entrance: 'right', origin: [0.05, 0.30], glow: '#FF6B1A', beam: ['#FF3B1A', '#FFD24A', '#FF8A1A'] },
-            { name: 'TENDRIL-KLACK', map: KRK_MAP, palette: KRK_PALETTE, entrance: 'right', origin: [0.5, 0.33], glow: '#2FFFE0', beam: ['#2FFFE0', '#E0FFFA', '#5EFFC7'] }
+            { name: 'ZORGOX', image: 'assets/kaiju/zorgox.png', map: KAIJU_MAP, palette: KAIJU_PALETTE, entrance: 'left', origin: [0.88, 0.27], glow: '#0DFF72', beam: ['#B06AFF', '#E8D9FF', '#0DC2FF'] },
+            { name: 'GYRO-MOTH', image: 'assets/kaiju/gyro-moth.png', map: MOTH_MAP, palette: MOTH_PALETTE, entrance: 'left', origin: [0.5, 0.82], glow: '#5EA1FF', beam: ['#4FC3FF', '#DCF3FF', '#7A5CFF'] },
+            { name: 'ROCK-TORT', image: 'assets/kaiju/rock-tort.png', map: ROCK_MAP, palette: ROCK_PALETTE, entrance: 'right', origin: [0.05, 0.30], glow: '#FF6B1A', beam: ['#FF3B1A', '#FFD24A', '#FF8A1A'] },
+            { name: 'TENDRIL-KLACK', image: 'assets/kaiju/tendril-klack.png', map: KRK_MAP, palette: KRK_PALETTE, entrance: 'right', origin: [0.5, 0.33], glow: '#2FFFE0', beam: ['#2FFFE0', '#E0FFFA', '#5EFFC7'] }
         ];
 
         function buildSprite(map, palette) {
@@ -1646,7 +1660,21 @@
         function createKaijuElement(type) {
             const kaiju = document.createElement('div');
             kaiju.classList.add('kaiju');
-            kaiju.innerHTML = buildSprite(type.map, type.palette);
+            if (type.image) {
+                const img = document.createElement('img');
+                img.alt = '';
+                img.style.cssText = 'width:100%;height:100%;display:block;image-rendering:pixelated;';
+                // Art file not added yet (or failed to load) - fall back to the
+                // procedural pixel sprite rather than showing a broken image.
+                img.addEventListener('error', () => {
+                    img.remove();
+                    kaiju.innerHTML = buildSprite(type.map, type.palette);
+                }, { once: true });
+                img.src = type.image;
+                kaiju.appendChild(img);
+            } else {
+                kaiju.innerHTML = buildSprite(type.map, type.palette);
+            }
             return kaiju;
         }
 
@@ -1713,43 +1741,62 @@
             if (isPaused || isGameOver) return;
             const type = KAIJU_TYPES[Math.floor(Math.random() * KAIJU_TYPES.length)];
             const kaiju = createKaijuElement(type);
-            const vw = window.innerWidth, vh = window.innerHeight;
-            const mapW = Math.max(...type.map.map(r => r.length));
-            const mapH = type.map.length;
-            // Small and mostly off-canvas: they peek in from the side edges to
-            // attack, they don't stomp onto the board and cover the gameplay.
-            let kH = Math.round(vh * 0.26);
-            let kW = Math.round(kH * mapW / mapH);
-            if (kW > vw * 0.5) { kW = Math.round(vw * 0.5); kH = Math.round(kW * mapH / mapW); }
-            kaiju.style.width = kW + 'px';
-            kaiju.style.height = kH + 'px';
-            kaiju.style.filter = `drop-shadow(0 0 16px ${type.glow})`;
-            const cr = canvas.getBoundingClientRect();
-            let restX, restY, prop, startVal, endVal;
-            restY = Math.max(0, Math.min(vh - kH, cr.top + cr.height * 0.08));
-            kaiju.style.top = restY + 'px';
-            prop = 'left';
-            if (type.entrance === 'left') {
-                // Only ~20% of its width pokes past the board's left edge.
-                restX = cr.left - kW * 0.80;
-                startVal = -kW; endVal = restX;
-            } else {
-                restX = cr.right - kW * 0.20;
-                startVal = vw; endVal = restX;
-            }
-            kaiju.style[prop] = startVal + 'px';
-            document.body.appendChild(kaiju);
-            const a = {}; a[prop] = startVal + 'px';
-            const b = {}; b[prop] = endVal + 'px';
-            kaiju.animate([a, b], { duration: 1500, easing: 'ease-out', fill: 'forwards' }).onfinish = () => {
-                kaiju.style[prop] = endVal + 'px';
-                kaijuAttack(kaiju, type);
-                setTimeout(() => {
-                    const oa = { opacity: 1 }; oa[prop] = endVal + 'px';
-                    const ob = { opacity: 0 }; ob[prop] = startVal + 'px';
-                    kaiju.animate([oa, ob], { duration: 1500, easing: 'ease-in', fill: 'forwards' }).onfinish = () => kaiju.remove();
-                }, 2700);
+            const fallbackW = Math.max(...type.map.map(r => r.length));
+            const fallbackH = type.map.length;
+
+            // Sizing/positioning/animation needs the sprite's real aspect ratio.
+            // For the procedural sprite that's known immediately; for a real image
+            // it's only known once the browser has loaded it, so this is deferred
+            // behind onload/onerror below rather than run synchronously.
+            const positionAndAnimate = (mapW, mapH) => {
+                const vw = window.innerWidth, vh = window.innerHeight;
+                // Small and mostly off-canvas: they peek in from the side edges to
+                // attack, they don't stomp onto the board and cover the gameplay.
+                let kH = Math.round(vh * 0.26);
+                let kW = Math.round(kH * mapW / mapH);
+                if (kW > vw * 0.5) { kW = Math.round(vw * 0.5); kH = Math.round(kW * mapH / mapW); }
+                kaiju.style.width = kW + 'px';
+                kaiju.style.height = kH + 'px';
+                kaiju.style.filter = `drop-shadow(0 0 16px ${type.glow})`;
+                const cr = canvas.getBoundingClientRect();
+                let restX, restY, prop, startVal, endVal;
+                restY = Math.max(0, Math.min(vh - kH, cr.top + cr.height * 0.08));
+                kaiju.style.top = restY + 'px';
+                prop = 'left';
+                if (type.entrance === 'left') {
+                    // Only ~20% of its width pokes past the board's left edge.
+                    restX = cr.left - kW * 0.80;
+                    startVal = -kW; endVal = restX;
+                } else {
+                    restX = cr.right - kW * 0.20;
+                    startVal = vw; endVal = restX;
+                }
+                kaiju.style[prop] = startVal + 'px';
+                document.body.appendChild(kaiju);
+                const a = {}; a[prop] = startVal + 'px';
+                const b = {}; b[prop] = endVal + 'px';
+                kaiju.animate([a, b], { duration: 1500, easing: 'ease-out', fill: 'forwards' }).onfinish = () => {
+                    kaiju.style[prop] = endVal + 'px';
+                    kaijuAttack(kaiju, type);
+                    setTimeout(() => {
+                        const oa = { opacity: 1 }; oa[prop] = endVal + 'px';
+                        const ob = { opacity: 0 }; ob[prop] = startVal + 'px';
+                        kaiju.animate([oa, ob], { duration: 1500, easing: 'ease-in', fill: 'forwards' }).onfinish = () => kaiju.remove();
+                    }, 2700);
+                };
             };
+
+            const img = kaiju.querySelector('img');
+            if (!img) {
+                positionAndAnimate(fallbackW, fallbackH); // no image field - procedural sprite, ready now
+            } else if (img.complete && img.naturalWidth) {
+                positionAndAnimate(img.naturalWidth, img.naturalHeight); // cached, already loaded
+            } else {
+                img.addEventListener('load', () => positionAndAnimate(img.naturalWidth, img.naturalHeight), { once: true });
+                // createKaijuElement()'s own error handler swaps in the procedural sprite;
+                // fall back to its dimensions once that swap has happened.
+                img.addEventListener('error', () => positionAndAnimate(fallbackW, fallbackH), { once: true });
+            }
         }
 
         function scheduleKaiju() {
