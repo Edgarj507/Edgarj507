@@ -338,14 +338,12 @@
             .credit {
                 font-size: 0.6em;
             }
-            #gameTitle { font-size: 1.1em; }
         }
     </style>
 </head>
 <body>
     <div id="cityscapePhoto"></div>
     <button id="musicToggle">&#9834; MUSIC: OFF</button>
-    <h1 id="gameTitle" style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5; font-size: 2em; color: #f538ff; font-family: 'Press Start 2P', cursive; text-shadow: 3px 3px #0dc2ff, 0 0 20px rgba(245, 56, 255, 0.55); white-space: nowrap; text-align: center;">KAIJU BLOCKS</h1>
     <div id="cityName" class="city-name"></div>
     <div class="credit">CREATED BY EDGAR R.</div>
     <div class="game-wrapper">
@@ -1249,14 +1247,13 @@
             const positionAndAnimate = (mapW, mapH) => {
                 const vw = window.innerWidth, vh = window.innerHeight;
                 const cr = canvas.getBoundingClientRect();
-                // Sized to the play area's own height (feet-to-head roughly matches
-                // the board) and standing on the ground - bottom-aligned to the
-                // board's bottom edge - rather than the earlier smaller, floating-
-                // near-the-top version. Still mostly off-canvas horizontally: they
-                // peek in from the side edges to attack, not stomp onto the board.
-                let kH = Math.round(cr.height * 0.95);
+                // Standing on the ground - bottom-aligned to the board's bottom
+                // edge - but sized and positioned so only about half their body
+                // pokes past the board's edge, a small slice of the play area
+                // rather than looming over the whole thing.
+                let kH = Math.round(cr.height * 0.5);
                 let kW = Math.round(kH * mapW / mapH);
-                if (kW > vw * 0.62) { kW = Math.round(vw * 0.62); kH = Math.round(kW * mapH / mapW); }
+                if (kW > vw * 0.4) { kW = Math.round(vw * 0.4); kH = Math.round(kW * mapH / mapW); }
                 kaiju.style.width = kW + 'px';
                 kaiju.style.height = kH + 'px';
                 kaiju.style.filter = `drop-shadow(0 0 16px ${type.glow})`;
@@ -1265,12 +1262,12 @@
                 kaiju.style.top = restY + 'px';
                 prop = 'left';
                 if (type.entrance === 'left') {
-                    // Only ~12% of its width pokes past the board's left edge -
-                    // standing back further than before, less crowding the board.
-                    restX = cr.left - kW * 0.88;
+                    // Half its width pokes past the board's left edge, the rest
+                    // stays off-canvas.
+                    restX = cr.left - kW * 0.5;
                     startVal = -kW; endVal = restX;
                 } else {
-                    restX = cr.right - kW * 0.12;
+                    restX = cr.right - kW * 0.5;
                     startVal = vw; endVal = restX;
                 }
                 kaiju.style[prop] = startVal + 'px';
