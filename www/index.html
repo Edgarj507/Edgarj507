@@ -1172,10 +1172,16 @@
             continueErrorEl.style.display = 'none';
             continueButton.disabled = false;
             if (lives > 0) {
+                // Free continues still available - restarting would just throw away
+                // a life you haven't used, so Play Again stays hidden until lives run out.
+                restartButton.style.display = 'none';
                 continueButton.textContent = `CONTINUE (${lives} LEFT)`;
                 continueButton.onclick = () => continueAfterGameOver(false);
                 return;
             }
+            // Lives are gone: show Play Again alongside the paid continue so there's
+            // always a free way forward, not just a paywall.
+            restartButton.style.display = '';
             continueButton.textContent = `CONTINUE — ${CONTINUE_PRICE_FALLBACK}`;
             continueButton.onclick = () => continueAfterGameOver(true);
             const iap = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.ContinuePurchase;
