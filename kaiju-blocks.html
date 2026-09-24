@@ -1018,6 +1018,7 @@
         }
 
         function createLaserBeam(startX, startY, endX, endY, onComplete) {
+            sfxLaserFire();
             const laser = document.createElement('div');
             laser.classList.add('laser-beam');
             const length = Math.hypot(endX - startX, endY - startY);
@@ -1273,6 +1274,7 @@
         }
 
         function createAtomicBreath(startX, startY, endX, endY, colors, onComplete, beamImage, beamHue) {
+            sfxBeamFire();
             const beam = document.createElement('div');
             beam.classList.add('atomic-breath');
             const length = Math.hypot(endX - startX, endY - startY);
@@ -1543,6 +1545,53 @@
             }
         }
 
+        // --- Custom audio overrides -----------------------------------------
+        // Drop files into assets/audio/music/ or assets/audio/sfx/ (see the
+        // README in each folder for exact filenames) to replace the built-in
+        // generated audio below. Missing files fall back to generated sound
+        // automatically - nothing else to wire up.
+        const CUSTOM_MUSIC_PATH = 'assets/audio/music/theme.mp3';
+        const CUSTOM_SFX_PATHS = {
+            move: 'assets/audio/sfx/move.mp3',
+            rotate: 'assets/audio/sfx/rotate.mp3',
+            lock: 'assets/audio/sfx/lock.mp3',
+            harddrop: 'assets/audio/sfx/harddrop.mp3',
+            blockBreak: 'assets/audio/sfx/block-break.mp3',
+            lineClear: 'assets/audio/sfx/line-clear.mp3',
+            levelUp: 'assets/audio/sfx/level-up.mp3',
+            gameOver: 'assets/audio/sfx/game-over.mp3',
+            kaijuRoar: 'assets/audio/sfx/kaiju-roar.mp3',
+            beamFire: 'assets/audio/sfx/beam-fire.mp3',
+            laserFire: 'assets/audio/sfx/laser-fire.mp3'
+        };
+        const customAudioStatus = {}; // path -> 'ok' | 'failed'
+        const customAudioElements = {}; // path -> HTMLAudioElement
+        let customMusicEl = null;
+
+        function probeCustomAudio(path) {
+            if (customAudioStatus[path]) return;
+            const el = new Audio();
+            el.oncanplaythrough = () => { customAudioStatus[path] = 'ok'; };
+            el.onerror = () => { customAudioStatus[path] = 'failed'; };
+            el.src = path;
+            customAudioElements[path] = el;
+            customAudioStatus[path] = 'loading';
+        }
+        function preloadCustomAudio() {
+            Object.values(CUSTOM_SFX_PATHS).forEach(probeCustomAudio);
+            probeCustomAudio(CUSTOM_MUSIC_PATH);
+            customMusicEl = customAudioElements[CUSTOM_MUSIC_PATH];
+            customMusicEl.loop = true;
+        }
+        // Plays the custom clip if it loaded successfully; returns whether it did,
+        // so the caller knows whether to skip its generated fallback.
+        function playCustomSfx(path) {
+            if (customAudioStatus[path] !== 'ok') return false;
+            const el = customAudioElements[path];
+            try { el.currentTime = 0; el.play().catch(() => {}); } catch (e) {}
+            return true;
+        }
+
         let sfxGain = null;
         function ensureAudio() {
             if (!audioCtx) {
@@ -1558,9 +1607,14 @@
         }
         function startMusic() {
             ensureAudio();
-            step16 = 0; barCount = 0;
-            nextNoteTime = audioCtx.currentTime + 0.1;
-            schedulerTimer = setInterval(scheduler, 25);
+            if (customAudioStatus[CUSTOM_MUSIC_PATH] === 'ok') {
+                customMusicEl.currentTime = 0;
+                customMusicEl.play().catch(() => {});
+            } else {
+                step16 = 0; barCount = 0;
+                nextNoteTime = audioCtx.currentTime + 0.1;
+                schedulerTimer = setInterval(scheduler, 25);
+            }
             musicOn = true;
             musicToggle.textContent = '♪ MUSIC: ON';
             musicToggle.classList.add('on');
@@ -1568,6 +1622,7 @@
         function stopMusic() {
             if (schedulerTimer) clearInterval(schedulerTimer);
             schedulerTimer = null;
+            if (customMusicEl) customMusicEl.pause();
             musicOn = false;
             musicToggle.textContent = '♪ MUSIC: OFF';
             musicToggle.classList.remove('on');
@@ -1601,18 +1656,33 @@
             g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
             s.start(now); s.stop(now + dur);
         }
-        const sfxMove = () => sBlip(200, 0.04, 'square', 0.08);
-        const sfxRotate = () => sBlip(340, 0.05, 'square', 0.10);
-        const sfxLock = () => sBlip(150, 0.06, 'triangle', 0.14, 90);
-        function sfxDrop() { sBlip(520, 0.14, 'sawtooth', 0.10, 70); sNoise(0.12, 0.08, 500); }
-        function sfxZap() { sBlip(1000, 0.07, 'square', 0.12, 200); }
+        function sfxMove() { if (playCustomSfx(CUSTOM_SFX_PATHS.move)) return; sBlip(200, 0.04, 'square', 0.08); }
+        function sfxRotate() { if (playCustomSfx(CUSTOM_SFX_PATHS.rotate)) return; sBlip(340, 0.05, 'square', 0.10); }
+        function sfxLock() { if (playCustomSfx(CUSTOM_SFX_PATHS.lock)) return; sBlip(150, 0.06, 'triangle', 0.14, 90); }
+        function sfxDrop() {
+            if (playCustomSfx(CUSTOM_SFX_PATHS.harddrop)) return;
+            sBlip(520, 0.14, 'sawtooth', 0.10, 70); sNoise(0.12, 0.08, 500);
+        }
+        function sfxZap() { if (playCustomSfx(CUSTOM_SFX_PATHS.blockBreak)) return; sBlip(1000, 0.07, 'square', 0.12, 200); }
         function sfxLine(n) {
+            if (playCustomSfx(CUSTOM_SFX_PATHS.lineClear)) return;
             for (let i = 0; i <= Math.min(3, n); i++) setTimeout(() => sBlip(420 + i * 160 + n * 60, 0.12, 'square', 0.12), i * 55);
             if (n >= 4) sNoise(0.4, 0.16, 1200);
         }
-        function sfxLevel() { [0, 4, 7, 12].forEach((s, i) => setTimeout(() => sBlip(midiFreq(69 + s), 0.14, 'square', 0.13), i * 70)); }
-        function sfxGameOver() { [0, -3, -6, -12].forEach((s, i) => setTimeout(() => sBlip(midiFreq(64 + s), 0.3, 'sawtooth', 0.16, midiFreq(60 + s)), i * 160)); }
-        function sfxRoar() { sNoise(0.55, 0.3, 200); sBlip(90, 0.5, 'sawtooth', 0.22, 46); }
+        function sfxLevel() {
+            if (playCustomSfx(CUSTOM_SFX_PATHS.levelUp)) return;
+            [0, 4, 7, 12].forEach((s, i) => setTimeout(() => sBlip(midiFreq(69 + s), 0.14, 'square', 0.13), i * 70));
+        }
+        function sfxGameOver() {
+            if (playCustomSfx(CUSTOM_SFX_PATHS.gameOver)) return;
+            [0, -3, -6, -12].forEach((s, i) => setTimeout(() => sBlip(midiFreq(64 + s), 0.3, 'sawtooth', 0.16, midiFreq(60 + s)), i * 160));
+        }
+        function sfxRoar() {
+            if (playCustomSfx(CUSTOM_SFX_PATHS.kaijuRoar)) return;
+            sNoise(0.55, 0.3, 200); sBlip(90, 0.5, 'sawtooth', 0.22, 46);
+        }
+        function sfxBeamFire() { if (playCustomSfx(CUSTOM_SFX_PATHS.beamFire)) return; sBlip(700, 0.08, 'sawtooth', 0.10, 1400); }
+        function sfxLaserFire() { if (playCustomSfx(CUSTOM_SFX_PATHS.laserFire)) return; sBlip(1400, 0.05, 'square', 0.08, 2200); }
 
         musicToggle.addEventListener('click', () => { musicOn ? stopMusic() : startMusic(); });
         // ==================== end music ===================================
@@ -1658,6 +1728,7 @@
         initCityscape();
         gameCenterSignIn();
         preloadBeamImages();
+        preloadCustomAudio();
 
         window.addEventListener('resize', () => {
             resizeGame();
