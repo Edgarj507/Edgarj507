@@ -1439,100 +1439,14 @@
         }
 
         // ====================================================================
-        //  SYNTHWAVE MUSIC ENGINE (original, generated with Web Audio)
+        //  AUDIO STATE (the generated synthwave music engine that used to live
+        //  here is gone - music now only plays if assets/audio/music/theme.mp3
+        //  exists, see the custom-audio block below. midiFreq stays: sfxLevel/
+        //  sfxGameOver still use it for their little stingers.)
         // ====================================================================
-        let audioCtx = null, musicGain = null, musicOn = false, schedulerTimer = null;
-        let step16 = 0, barCount = 0, nextNoteTime = 0;
-        const BPM = 150;
-        // Driving battle loop: Am - F - G - E(dom) in A minor
-        const PROG = [
-            { root: 45, notes: [57, 60, 64] },  // Am
-            { root: 41, notes: [53, 57, 60] },  // F
-            { root: 43, notes: [55, 59, 62] },  // G
-            { root: 40, notes: [52, 56, 59] }   // E (major -> tension)
-        ];
-        const LEAD_PATTERN = [0, 2, 1, 2, 0, 1, 2, 1, 0, 2, 1, 0, 2, 1, 2, 0];
-        const LEAD_OCT = [12, 12, 12, 24, 12, 12, 24, 12, 12, 24, 12, 12, 24, 12, 12, 24];
+        let audioCtx = null, musicOn = false;
         const midiFreq = m => 440 * Math.pow(2, (m - 69) / 12);
 
-        function tone(type, freq, t, dur, peak, lp, det) {
-            const o = audioCtx.createOscillator();
-            const g = audioCtx.createGain();
-            o.type = type; o.frequency.value = freq;
-            if (det) o.detune.value = det;
-            let last = o;
-            if (lp) {
-                const f = audioCtx.createBiquadFilter();
-                f.type = 'lowpass'; f.frequency.value = lp;
-                o.connect(f); last = f;
-            }
-            last.connect(g); g.connect(musicGain);
-            g.gain.setValueAtTime(0.0001, t);
-            g.gain.exponentialRampToValueAtTime(peak, t + 0.008);
-            g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-            o.start(t); o.stop(t + dur + 0.03);
-        }
-        function noiseHit(t, dur, peak, hp) {
-            const len = Math.max(1, Math.floor(audioCtx.sampleRate * dur));
-            const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
-            const d = buf.getChannelData(0);
-            for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-            const s = audioCtx.createBufferSource(); s.buffer = buf;
-            const f = audioCtx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hp;
-            const g = audioCtx.createGain();
-            s.connect(f); f.connect(g); g.connect(musicGain);
-            g.gain.setValueAtTime(peak, t);
-            g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-            s.start(t); s.stop(t + dur);
-        }
-        function kick(t) {
-            const o = audioCtx.createOscillator();
-            const g = audioCtx.createGain();
-            o.connect(g); g.connect(musicGain);
-            o.frequency.setValueAtTime(130, t);
-            o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
-            g.gain.setValueAtTime(0.9, t);
-            g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
-            o.start(t); o.stop(t + 0.2);
-        }
-        function snare(t) {
-            noiseHit(t, 0.18, 0.35, 1400);
-            tone('triangle', 180, t, 0.14, 0.18, 2000);
-        }
-        function scheduleStep(step, t) {
-            const chord = PROG[barCount % PROG.length];
-            const phrase = barCount % 4;
-            // --- drums ---
-            if (step === 0 || step === 4 || step === 8 || step === 12) kick(t);
-            if (step === 7 || step === 10) kick(t);              // syncopated drive
-            if (step === 4 || step === 12) snare(t);             // backbeat
-            if (phrase === 3 && (step === 13 || step === 14 || step === 15)) snare(t); // fill
-            noiseHit(t, step % 2 ? 0.03 : 0.05, step % 2 ? 0.06 : 0.11, 9000); // busy 16th hats
-            if (step === 0 && phrase === 0) noiseHit(t, 0.45, 0.13, 2500);      // crash on the "1"
-            // --- bass: pumping octave eighths ---
-            if (step % 2 === 0) {
-                const oct = ((step / 2) % 2 === 0) ? 0 : 12;
-                tone('sawtooth', midiFreq(chord.root + oct), t, 0.15, 0.34, 1000);
-            }
-            // --- lead riff (16ths) with a detuned layer for grit ---
-            const li = LEAD_PATTERN[step] % chord.notes.length;
-            const lf = midiFreq(chord.notes[li] + LEAD_OCT[step]);
-            tone('square', lf, t, 0.10, 0.12, 3800, 0);
-            tone('square', lf, t, 0.10, 0.06, 3800, 9);
-            // --- power stabs twice a bar ---
-            if (step === 0 || step === 8) chord.notes.forEach(n => tone('sawtooth', midiFreq(n + 12), t, 0.16, 0.09, 2400));
-            // --- pad underneath ---
-            if (step === 0) chord.notes.forEach(n => tone('sawtooth', midiFreq(n - 12), t, 1.4, 0.038, 1100));
-        }
-        function scheduler() {
-            const sixteenth = 60 / BPM / 4;
-            while (nextNoteTime < audioCtx.currentTime + 0.12) {
-                scheduleStep(step16, nextNoteTime);
-                nextNoteTime += sixteenth;
-                step16++;
-                if (step16 >= 16) { step16 = 0; barCount++; }
-            }
-        }
         // --- Native bridge helpers (Haptics / Game Center) ---
         // Guarded the same way as ContinuePurchase above: no-op outside the
         // Capacitor shell so kaiju-blocks.html (plain browser) still runs.
@@ -1607,32 +1521,26 @@
         function ensureAudio() {
             if (!audioCtx) {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                musicGain = audioCtx.createGain();
-                musicGain.gain.value = 0.2;
-                musicGain.connect(audioCtx.destination);
                 sfxGain = audioCtx.createGain();
                 sfxGain.gain.value = 0.5;
                 sfxGain.connect(audioCtx.destination);
             }
             if (audioCtx.state === 'suspended') audioCtx.resume();
         }
+        // Only plays if assets/audio/music/theme.mp3 exists (no generated music
+        // anymore) - still flips the toggle/button state either way so it's not
+        // stuck showing OFF, it's just silent without a file.
         function startMusic() {
             ensureAudio();
             if (customAudioStatus[CUSTOM_MUSIC_PATH] === 'ok') {
                 customMusicEl.currentTime = 0;
                 customMusicEl.play().catch(() => {});
-            } else {
-                step16 = 0; barCount = 0;
-                nextNoteTime = audioCtx.currentTime + 0.1;
-                schedulerTimer = setInterval(scheduler, 25);
             }
             musicOn = true;
             musicToggle.textContent = '♪ MUSIC: ON';
             musicToggle.classList.add('on');
         }
         function stopMusic() {
-            if (schedulerTimer) clearInterval(schedulerTimer);
-            schedulerTimer = null;
             if (customMusicEl) customMusicEl.pause();
             musicOn = false;
             musicToggle.textContent = '♪ MUSIC: OFF';
