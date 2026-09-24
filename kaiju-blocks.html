@@ -293,17 +293,6 @@
             transform-origin: left center;
             z-index: 2;
         }
-        .abduction-light {
-            position: absolute;
-            left: 50%;
-            top: 90%;
-            transform: translateX(-50%);
-            width: 100px;
-            height: 100px;
-            background: radial-gradient(circle, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 70%);
-            border-radius: 50%;
-            opacity: 0;
-        }
         .credit {
             position: fixed;
             bottom: 20px;
@@ -314,28 +303,9 @@
             z-index: 5;
             transition: opacity 0.5s, transform 1.5s ease-in;
         }
-        .credit-block {
-            position: absolute;
-            width: 8px;
-            height: 8px;
-            background-color: #888;
-            border: 1px solid #555;
-            opacity: 1;
-            animation: credit-explode 0.5s ease-out forwards;
-        }
         @keyframes blink {
             from { opacity: 1; }
             to { opacity: 0.2; }
-        }
-        @keyframes credit-explode {
-            0% {
-                transform: translate(0, 0) scale(1);
-                opacity: 1;
-            }
-            100% {
-                transform: translate(var(--dx), var(--dy)) scale(1.5);
-                opacity: 0;
-            }
         }
         @media (max-width: 800px) {
             .game-wrapper {
@@ -453,7 +423,6 @@
         let continuePurchaseInFlight = false;
         let animationFrameId;
         let particles = [];
-        let isCreditVisible = true;
 
         let COLORS = [null, '#F538FF', '#0DC2FF', '#0DFF72', '#FF0D72', '#FF8E0D', '#FFE138', '#3877FF'];
         function shade(hex, pct) {
@@ -992,31 +961,6 @@
             }
         }
 
-        function explodeCredit() {
-            if (!creditElement || !isCreditVisible) return;
-            isCreditVisible = false;
-            const text = creditElement.textContent;
-            const rect = creditElement.getBoundingClientRect();
-            creditElement.style.opacity = '0';
-            for (let i = 0; i < text.length; i++) {
-                if (text[i].trim() === '') continue;
-                const block = document.createElement('div');
-                block.classList.add('credit-block');
-                block.style.left = `${rect.left + i * (rect.width / text.length)}px`;
-                block.style.top = `${rect.top}px`;
-                block.style.setProperty('--dx', `${(Math.random() - 0.5) * 60}px`);
-                block.style.setProperty('--dy', `${(Math.random() - 0.5) * 60}px`);
-                document.body.appendChild(block);
-                setTimeout(() => block.remove(), 500);
-            }
-            setTimeout(() => {
-                if (creditElement) {
-                    creditElement.style.opacity = '1';
-                    isCreditVisible = true;
-                }
-            }, 2000);
-        }
-
         function createLaserBeam(startX, startY, endX, endY, onComplete) {
             sfxLaserFire();
             const laser = document.createElement('div');
@@ -1086,10 +1030,10 @@
         // x fraction along with it - whenever they don't already match, so
         // every kaiju looks at the board instead of away from it.
         const KAIJU_TYPES = [
-            { name: 'ZORGOX', image: 'assets/kaiju/zorgox.png', beamImage: 'assets/kaiju/beam.png', entrance: 'left', facing: 'right', origin: [0.88, 0.27], glow: '#0DFF72', beam: ['#B06AFF', '#E8D9FF', '#0DC2FF'] },
-            { name: 'GYRO-MOTH', image: 'assets/kaiju/gyro-moth.png', beamImage: 'assets/kaiju/beam.png', particleImages: ['assets/kaiju/gyro-moth-cloud.png', 'assets/kaiju/gyro-moth-particles.png'], entrance: 'left', facing: 'symmetric', origin: [0.5, 0.82], glow: '#5EA1FF', beam: ['#4FC3FF', '#DCF3FF', '#7A5CFF'] },
-            { name: 'ROCK-TORT', image: 'assets/kaiju/rock-tort.png', beamImage: 'assets/kaiju/beam.png', beamHue: 159, entrance: 'right', facing: 'right', origin: [0.88, 0.32], glow: '#FF6B1A', beam: ['#FF3B1A', '#FFD24A', '#FF8A1A'] },
-            { name: 'TENDRIL-KLACK', image: 'assets/kaiju/tendril-klack.png', beamImage: 'assets/kaiju/beam.png', beamHue: -81, entrance: 'right', facing: 'symmetric', origin: [0.5, 0.33], glow: '#2FFFE0', beam: ['#2FFFE0', '#E0FFFA', '#5EFFC7'] }
+            { name: 'ZORGOX', image: 'assets/kaiju/zorgox.png', beamImage: 'assets/kaiju/beam.png', entrance: 'left', facing: 'right', origin: [0.84, 0.19], glow: '#0DFF72', beam: ['#B06AFF', '#E8D9FF', '#0DC2FF'] },
+            { name: 'GYRO-MOTH', image: 'assets/kaiju/gyro-moth.png', beamImage: 'assets/kaiju/beam.png', particleImages: ['assets/kaiju/gyro-moth-cloud.png', 'assets/kaiju/gyro-moth-particles.png'], entrance: 'left', facing: 'symmetric', origin: [0.5, 0.58], glow: '#5EA1FF', beam: ['#4FC3FF', '#DCF3FF', '#7A5CFF'] },
+            { name: 'ROCK-TORT', image: 'assets/kaiju/rock-tort.png', beamImage: 'assets/kaiju/beam.png', beamHue: 159, entrance: 'right', facing: 'right', origin: [0.77, 0.38], glow: '#FF6B1A', beam: ['#FF3B1A', '#FFD24A', '#FF8A1A'] },
+            { name: 'TENDRIL-KLACK', image: 'assets/kaiju/tendril-klack.png', beamImage: 'assets/kaiju/beam.png', beamHue: -81, entrance: 'right', facing: 'symmetric', origin: [0.5, 0.62], glow: '#2FFFE0', beam: ['#2FFFE0', '#E0FFFA', '#5EFFC7'] }
         ];
 
         function buildSprite(map, palette) {
@@ -1126,84 +1070,6 @@
             return saucer;
         }
 
-        function animateSaucerToCredit(saucer) {
-            const creditRect = creditElement.getBoundingClientRect();
-            const targetX = creditRect.left + (creditRect.width / 2) - 40;
-            const targetY = creditRect.top - 100;
-            const startX = Math.random() < 0.5 ? -100 : window.innerWidth;
-            const startY = Math.random() * 150;
-            saucer.style.left = `${startX}px`;
-            saucer.style.top = `${startY}px`;
-            document.body.appendChild(saucer);
-            return saucer.animate(
-                [{ left: saucer.style.left, top: saucer.style.top }, { left: `${targetX}px`, top: `${targetY}px` }],
-                { duration: 2000, easing: 'ease-in-out', fill: 'forwards' }
-            );
-        }
-
-        function animateSaucerAway(saucer) {
-             saucer.animate([
-                { transform: 'translateY(0) scale(1)', opacity: 1 },
-                { transform: 'translateY(-200px) scale(0.5)', opacity: 0 }
-            ], { duration: 1500, easing: 'ease-in' })
-            .onfinish = () => saucer.remove();
-        }
-
-        function initiateLaserAttackOnCredit() {
-            if (!creditElement) return;
-            const saucer = createSaucerElement();
-            const flyToTarget = animateSaucerToCredit(saucer);
-            flyToTarget.onfinish = () => {
-                setTimeout(() => {
-                    const saucerRect = saucer.getBoundingClientRect();
-                    const creditRect = creditElement.getBoundingClientRect();
-                    createLaserBeam(saucerRect.left + saucerRect.width / 2, saucerRect.top + saucerRect.height / 2, creditRect.left + creditRect.width / 2, creditRect.top + creditRect.height / 2, explodeCredit);
-                    setTimeout(() => animateSaucerAway(saucer), 500);
-                }, 500);
-            };
-        }
-
-        function initiateAbduction() {
-            if (!creditElement || !isCreditVisible) return;
-            const saucer = createSaucerElement();
-            const flyToTarget = animateSaucerToCredit(saucer);
-            flyToTarget.onfinish = () => {
-                const light = document.createElement('div');
-                light.classList.add('abduction-light');
-                saucer.appendChild(light);
-                const powerUpAnimation = light.animate([
-                    { opacity: 0, transform: 'translateX(-50%) scale(0.5)' },
-                    { opacity: 1, transform: 'translateX(-50%) scale(1)' }
-                ], { duration: 1000, easing: 'ease-in-out', fill: 'forwards' });
-
-                powerUpAnimation.onfinish = () => {
-                    isCreditVisible = false;
-                    creditElement.style.transition = 'transform 2s ease-in, opacity 2s ease-in';
-                    creditElement.style.transform = `translateY(-120px) scale(0)`;
-                    creditElement.style.opacity = '0';
-                    setTimeout(() => {
-                        animateSaucerAway(saucer);
-                        setTimeout(() => {
-                            creditElement.style.transition = 'opacity 0.5s';
-                            creditElement.style.transform = 'translateY(0) scale(1)';
-                            creditElement.style.opacity = '1';
-                            isCreditVisible = true;
-                        }, 2000);
-                    }, 2100);
-                };
-            };
-        }
-
-        function runRandomSpecialEvent() {
-            if (Math.random() < 0.5) {
-                initiateAbduction();
-            } else {
-                initiateLaserAttackOnCredit();
-            }
-            const randomDelay = Math.random() * 180000 + 120000;
-            setTimeout(runRandomSpecialEvent, randomDelay);
-        }
-
         function fireLaser(saucer) {
             const targets = [];
             for (let y = 0; y < ROWS; y++) {
@@ -1215,8 +1081,10 @@
             const target = targets[Math.floor(Math.random() * targets.length)];
             const originRect = saucer.getBoundingClientRect();
             const canvasRect = canvas.getBoundingClientRect();
-            const startX = originRect.left + originRect.width / 2;
-            const startY = originRect.top + originRect.height / 2;
+            // Underside of the saucer's dome, not its full bounding box center,
+            // so the beam visibly starts at the hull instead of floating above it.
+            const startX = originRect.left + originRect.width * 0.5;
+            const startY = originRect.top + originRect.height * 0.88;
             const endX = canvasRect.left + (target.x * BLOCK_SIZE) + (BLOCK_SIZE / 2);
             const endY = canvasRect.top + (target.y * BLOCK_SIZE) + (BLOCK_SIZE / 2);
             createLaserBeam(startX, startY, endX, endY, () => destroyBlock(target.x, target.y));
@@ -1282,7 +1150,7 @@
             beam.style.width = `${length}px`;
             // Scales with the board's own block size instead of a flat px value,
             // so it reads as a similarly-thick bolt on a phone and on a wide screen.
-            beam.style.height = `${Math.max(34, BLOCK_SIZE * 1.5)}px`;
+            beam.style.height = `${Math.max(58, BLOCK_SIZE * 2.4)}px`;
             beam.style.left = `${startX}px`;
             beam.style.top = `${startY}px`;
             beam.style.transform = `rotate(${angle}deg)`;
@@ -1652,7 +1520,6 @@
         }, 1000);
 
         setInterval(createFlyingSaucer, 45000);
-        setTimeout(runRandomSpecialEvent, 20000);
         setTimeout(() => { createKaiju(); scheduleKaiju(); }, 12000);
 
     </script>
