@@ -223,6 +223,22 @@
             image-rendering: crisp-edges;
             transition: opacity 0.6s ease-in-out;
         }
+        /* Real skyline art (see PHOTO_CITIES) layered over the procedural canvas -
+           only one of the two is opaque at a time, toggled in drawCurrentCity(). */
+        #cityscapePhoto {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: -2;
+            background-size: cover;
+            background-position: center center;
+            background-repeat: no-repeat;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            opacity: 0;
+            transition: opacity 0.6s ease-in-out;
+        }
         .city-name {
             position: fixed;
             bottom: 20px;
@@ -395,6 +411,7 @@
 </head>
 <body>
     <canvas id="cityscape"></canvas>
+    <div id="cityscapePhoto"></div>
     <button id="musicToggle">&#9834; MUSIC: OFF</button>
     <h1 id="gameTitle" style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5; font-size: 2em; color: #f538ff; font-family: 'Press Start 2P', cursive; text-shadow: 3px 3px #0dc2ff, 0 0 20px rgba(245, 56, 255, 0.55); white-space: nowrap; text-align: center;">KAIJU BLOCKS</h1>
     <div id="cityName" class="city-name"></div>
@@ -468,6 +485,7 @@
         const creditElement = document.querySelector('.credit');
         const cityscape = document.getElementById('cityscape');
         const cityCtx = cityscape.getContext('2d');
+        const cityscapePhoto = document.getElementById('cityscapePhoto');
         const cityNameEl = document.getElementById('cityName');
         const musicToggle = document.getElementById('musicToggle');
 
@@ -824,19 +842,39 @@
             for (let x = 2; x < cityW; x += 8) px(x, cityH - Math.round((cityH - horizon) * 0.35), 3, 1, '#3a3560');
         }
 
+        // Real skyline art, layered over the procedural canvas via #cityscapePhoto
+        // (see drawCurrentCity). Each needs an `image` path; CITY_DEFS entries stay
+        // canvas-drawn and are used for 'random' variety between these.
+        const PHOTO_CITIES = {
+            la: { name: 'LOS ANGELES', image: 'assets/cities/la.jpg' },
+            tokyoPhoto: { name: 'TOKYO', image: 'assets/cities/tokyo.jpg' },
+            newyork: { name: 'NEW YORK', image: 'assets/cities/newyork.jpg' },
+            cairo: { name: 'CAIRO', image: 'assets/cities/cairo.jpg' },
+            london: { name: 'LONDON', image: 'assets/cities/london.jpg' }
+        };
+
         // playlist of cities to rotate through; 'random' regenerates each time
-        const CITY_PLAYLIST = ['tokyo', 'la', 'ny', 'random', 'tokyo', 'random', 'la', 'random', 'ny', 'random'];
+        const CITY_PLAYLIST = ['la', 'tokyoPhoto', 'newyork', 'random', 'cairo', 'random', 'london', 'random', 'tokyoPhoto', 'random'];
         let cityIndex = 0;
         let currentCity = null;
 
         function buildCityAt(i) {
             const key = CITY_PLAYLIST[i % CITY_PLAYLIST.length];
             if (key === 'random') return makeRandomCity(Math.floor(Math.random() * 1e9));
+            if (PHOTO_CITIES[key]) return PHOTO_CITIES[key];
             return Object.assign({ seed: 0 }, CITY_DEFS[key]);
         }
         function drawCurrentCity() {
             if (!currentCity) return;
-            drawCity(currentCity);
+            if (currentCity.image) {
+                cityscapePhoto.style.backgroundImage = `url(${currentCity.image})`;
+                cityscapePhoto.style.opacity = '1';
+                cityscape.style.opacity = '0';
+            } else {
+                drawCity(currentCity);
+                cityscape.style.opacity = '1';
+                cityscapePhoto.style.opacity = '0';
+            }
             if (cityNameEl) cityNameEl.textContent = currentCity.name;
         }
         function resizeCityscape() {
@@ -849,12 +887,12 @@
         }
         function cycleCity() {
             cityscape.style.opacity = '0';
+            cityscapePhoto.style.opacity = '0';
             if (cityNameEl) cityNameEl.style.opacity = '0';
             setTimeout(() => {
                 cityIndex++;
                 currentCity = buildCityAt(cityIndex);
-                drawCurrentCity();
-                cityscape.style.opacity = '1';
+                drawCurrentCity(); // sets whichever layer is active back to opacity 1
                 if (cityNameEl) cityNameEl.style.opacity = '1';
             }, 600);
         }
@@ -1730,17 +1768,20 @@
 
             const positionAndAnimate = (mapW, mapH) => {
                 const vw = window.innerWidth, vh = window.innerHeight;
-                // Mostly off-canvas: they peek in from the side edges to attack,
-                // they don't stomp onto the board and cover the gameplay.
-                let kH = Math.round(vh * 0.34);
+                const cr = canvas.getBoundingClientRect();
+                // Sized to the play area's own height (feet-to-head roughly matches
+                // the board) and standing on the ground - bottom-aligned to the
+                // board's bottom edge - rather than the earlier smaller, floating-
+                // near-the-top version. Still mostly off-canvas horizontally: they
+                // peek in from the side edges to attack, not stomp onto the board.
+                let kH = Math.round(cr.height * 0.95);
                 let kW = Math.round(kH * mapW / mapH);
                 if (kW > vw * 0.62) { kW = Math.round(vw * 0.62); kH = Math.round(kW * mapH / mapW); }
                 kaiju.style.width = kW + 'px';
                 kaiju.style.height = kH + 'px';
                 kaiju.style.filter = `drop-shadow(0 0 16px ${type.glow})`;
-                const cr = canvas.getBoundingClientRect();
                 let restX, restY, prop, startVal, endVal;
-                restY = Math.max(0, Math.min(vh - kH, cr.top + cr.height * 0.08));
+                restY = Math.max(0, Math.min(vh - kH, cr.bottom - kH));
                 kaiju.style.top = restY + 'px';
                 prop = 'left';
                 if (type.entrance === 'left') {
