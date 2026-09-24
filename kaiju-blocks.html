@@ -1485,11 +1485,13 @@
 
         // The kaiju roster. origin = [fx,fy] fraction of the sprite where the
         // beam starts; entrance = which edge it comes in from.
+        // All four now enter from the left/right screen edges only (no top/bottom),
+        // small and mostly off-canvas so they don't cover the board - see createKaiju().
         const KAIJU_TYPES = [
             { name: 'ZORGOX', map: KAIJU_MAP, palette: KAIJU_PALETTE, entrance: 'left', origin: [0.88, 0.27], glow: '#0DFF72', beam: ['#0DFF72', '#E6FFF0', '#0DC2FF'] },
-            { name: 'GYRO-MOTH', map: MOTH_MAP, palette: MOTH_PALETTE, entrance: 'top', origin: [0.5, 0.82], glow: '#FF5EA1', beam: ['#FF5EA1', '#FFD6F2', '#B06AFF'] },
+            { name: 'GYRO-MOTH', map: MOTH_MAP, palette: MOTH_PALETTE, entrance: 'left', origin: [0.5, 0.82], glow: '#FF5EA1', beam: ['#FF5EA1', '#FFD6F2', '#B06AFF'] },
             { name: 'ROCK-TORT', map: ROCK_MAP, palette: ROCK_PALETTE, entrance: 'right', origin: [0.05, 0.30], glow: '#FF6B1A', beam: ['#FF3B1A', '#FFD24A', '#FF8A1A'] },
-            { name: 'TENDRIL-KLACK', map: KRK_MAP, palette: KRK_PALETTE, entrance: 'bottom', origin: [0.5, 0.33], glow: '#2FFFE0', beam: ['#2FFFE0', '#E0FFFA', '#5EFFC7'] }
+            { name: 'TENDRIL-KLACK', map: KRK_MAP, palette: KRK_PALETTE, entrance: 'right', origin: [0.5, 0.33], glow: '#2FFFE0', beam: ['#2FFFE0', '#E0FFFA', '#5EFFC7'] }
         ];
 
         function buildSprite(map, palette) {
@@ -1708,35 +1710,26 @@
             const vw = window.innerWidth, vh = window.innerHeight;
             const mapW = Math.max(...type.map.map(r => r.length));
             const mapH = type.map.length;
-            let kH = Math.round(vh * 0.52);
+            // Small and mostly off-canvas: they peek in from the side edges to
+            // attack, they don't stomp onto the board and cover the gameplay.
+            let kH = Math.round(vh * 0.26);
             let kW = Math.round(kH * mapW / mapH);
-            if (kW > vw * 0.9) { kW = Math.round(vw * 0.9); kH = Math.round(kW * mapH / mapW); }
+            if (kW > vw * 0.5) { kW = Math.round(vw * 0.5); kH = Math.round(kW * mapH / mapW); }
             kaiju.style.width = kW + 'px';
             kaiju.style.height = kH + 'px';
             kaiju.style.filter = `drop-shadow(0 0 16px ${type.glow})`;
             const cr = canvas.getBoundingClientRect();
-            const cx = cr.left + cr.width / 2;
             let restX, restY, prop, startVal, endVal;
+            restY = Math.max(0, Math.min(vh - kH, cr.top + cr.height * 0.08));
+            kaiju.style.top = restY + 'px';
+            prop = 'left';
             if (type.entrance === 'left') {
-                restY = Math.max(0, Math.min(vh - kH, cr.top + cr.height * 0.12));
-                restX = Math.max(-kW * 0.3, cr.left - kW * 0.55);
-                kaiju.style.top = restY + 'px';
-                prop = 'left'; startVal = -kW; endVal = restX;
-            } else if (type.entrance === 'right') {
-                restY = Math.max(0, Math.min(vh - kH, cr.top + cr.height * 0.12));
-                restX = Math.min(vw - kW * 0.7, cr.right - kW * 0.45);
-                kaiju.style.top = restY + 'px';
-                prop = 'left'; startVal = vw; endVal = restX;
-            } else if (type.entrance === 'top') {
-                restX = Math.round(cx - kW / 2);
-                restY = Math.max(-kH * 0.08, cr.top - kH * 0.32);
-                kaiju.style.left = restX + 'px';
-                prop = 'top'; startVal = -kH; endVal = restY;
+                // Only ~20% of its width pokes past the board's left edge.
+                restX = cr.left - kW * 0.80;
+                startVal = -kW; endVal = restX;
             } else {
-                restX = Math.round(cx - kW / 2);
-                restY = Math.round(vh - kH * 0.92);
-                kaiju.style.left = restX + 'px';
-                prop = 'top'; startVal = vh; endVal = restY;
+                restX = cr.right - kW * 0.20;
+                startVal = vw; endVal = restX;
             }
             kaiju.style[prop] = startVal + 'px';
             document.body.appendChild(kaiju);
