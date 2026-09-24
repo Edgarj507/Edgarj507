@@ -1045,6 +1045,7 @@
             if (clearedLinesCount > 0) {
                 lines += clearedLinesCount;
                 sfxLine(clearedLinesCount);
+                hapticImpact('HEAVY');
                 const lineScores = [0, 40, 100, 300, 1200];
                 score += (lineScores[clearedLinesCount] || lineScores[4]) * level;
                 const newLevel = Math.floor(lines / 10) + 1;
@@ -1093,6 +1094,7 @@
                 player.pos.y--;
                 merge(board, player);
                 sfxLock();
+                hapticImpact('LIGHT');
                 boardSweep(); updateScore(); playerReset();
             }
             dropCounter = 0;
@@ -1103,6 +1105,7 @@
             player.pos.y--;
             merge(board, player);
             sfxLock();
+            hapticImpact('LIGHT');
             boardSweep(); updateScore(); playerReset();
             dropCounter = 0;
         }
@@ -1158,6 +1161,9 @@
             board.forEach((row, y) => row.forEach((value, x) => {
                 if (value > 0) createExplosion(x, y, COLORS[value]);
             }));
+            // GameKit dedupes against your best submitted score, so it's safe
+            // to submit here even though a continue might raise this later.
+            gameCenterSubmitScore(score);
         }
 
         // Sets the modal's continue button to either "free life" or "paid" mode
@@ -1675,6 +1681,7 @@
         function kaijuAttack(kaiju, type) {
             kaiju.classList.add('charging', 'roaring');
             sfxRoar();
+            hapticNotification('WARNING');
             const kRect = kaiju.getBoundingClientRect();
             const mouthX = kRect.left + kRect.width * type.origin[0];
             const mouthY = kRect.top + kRect.height * type.origin[1];
@@ -1860,6 +1867,29 @@
                 if (step16 >= 16) { step16 = 0; barCount++; }
             }
         }
+        // --- Native bridge helpers (Haptics / Game Center) ---
+        // Guarded the same way as ContinuePurchase above: no-op outside the
+        // Capacitor shell so kaiju-blocks.html (plain browser) still runs.
+        function hapticImpact(style) {
+            const plugin = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.Haptics;
+            if (plugin) plugin.impact({ style }).catch(() => {});
+        }
+        function hapticNotification(type) {
+            const plugin = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.Haptics;
+            if (plugin) plugin.notification({ type }).catch(() => {});
+        }
+        function gameCenterSignIn() {
+            const plugin = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.GameCenter;
+            if (plugin) plugin.signIn().catch(e => console.warn('Game Center sign-in skipped:', e));
+        }
+        function gameCenterSubmitScore(finalScore) {
+            const plugin = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.GameCenter;
+            if (plugin) {
+                plugin.submitScore({ leaderboardId: 'com.edgarj507.kaijublocks.highscores', score: finalScore })
+                    .catch(e => console.warn('Game Center score submit failed:', e));
+            }
+        }
+
         let sfxGain = null;
         function ensureAudio() {
             if (!audioCtx) {
@@ -1973,6 +2003,7 @@
         resetGame();
         resizeGame();
         initCityscape();
+        gameCenterSignIn();
 
         window.addEventListener('resize', () => {
             resizeGame();
