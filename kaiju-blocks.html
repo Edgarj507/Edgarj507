@@ -1530,10 +1530,21 @@
             return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block;">${rects}</svg>`;
         }
 
+        const UFO_IMAGE = 'assets/ufo/saucer.png';
         function createSaucerElement() {
             const saucer = document.createElement('div');
             saucer.classList.add('flying-saucer');
-            saucer.innerHTML = buildSprite(UFO_MAP, UFO_PALETTE);
+            const img = document.createElement('img');
+            img.alt = '';
+            // object-fit:contain so the real image's aspect ratio (taller/rounder
+            // than the flat procedural UFO_MAP box) never gets squashed into it.
+            img.style.cssText = 'width:100%;height:100%;display:block;object-fit:contain;image-rendering:pixelated;';
+            img.addEventListener('error', () => {
+                img.remove();
+                saucer.innerHTML = buildSprite(UFO_MAP, UFO_PALETTE);
+            }, { once: true });
+            img.src = UFO_IMAGE;
+            saucer.appendChild(img);
             return saucer;
         }
 
