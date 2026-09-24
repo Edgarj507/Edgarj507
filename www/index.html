@@ -1439,11 +1439,19 @@
         // ZORGOX/GYRO-MOTH keep the art's native blue (beamHue omitted/0).
         // `particleImages`, if set, mixes themed sprites into that kaiju's impact
         // explosions (see createExplosion) instead of plain colored squares.
+        //
+        // `facing` is which way the art itself looks: 'left', 'right', or
+        // 'symmetric' (front-on, no strong bias - flipping it changes nothing).
+        // createKaiju() compares this against what its `entrance` side requires
+        // (entering from the left means the board is to its right, so it must
+        // face right, and vice versa) and mirrors the sprite - and `origin`'s
+        // x fraction along with it - whenever they don't already match, so
+        // every kaiju looks at the board instead of away from it.
         const KAIJU_TYPES = [
-            { name: 'ZORGOX', image: 'assets/kaiju/zorgox.png', beamImage: 'assets/kaiju/beam.png', entrance: 'left', origin: [0.88, 0.27], glow: '#0DFF72', beam: ['#B06AFF', '#E8D9FF', '#0DC2FF'] },
-            { name: 'GYRO-MOTH', image: 'assets/kaiju/gyro-moth.png', beamImage: 'assets/kaiju/beam.png', particleImages: ['assets/kaiju/gyro-moth-cloud.png', 'assets/kaiju/gyro-moth-particles.png'], entrance: 'left', origin: [0.5, 0.82], glow: '#5EA1FF', beam: ['#4FC3FF', '#DCF3FF', '#7A5CFF'] },
-            { name: 'ROCK-TORT', image: 'assets/kaiju/rock-tort.png', beamImage: 'assets/kaiju/beam.png', beamHue: 159, entrance: 'right', origin: [0.05, 0.30], glow: '#FF6B1A', beam: ['#FF3B1A', '#FFD24A', '#FF8A1A'] },
-            { name: 'TENDRIL-KLACK', image: 'assets/kaiju/tendril-klack.png', beamImage: 'assets/kaiju/beam.png', beamHue: -81, entrance: 'right', origin: [0.5, 0.33], glow: '#2FFFE0', beam: ['#2FFFE0', '#E0FFFA', '#5EFFC7'] }
+            { name: 'ZORGOX', image: 'assets/kaiju/zorgox.png', beamImage: 'assets/kaiju/beam.png', entrance: 'left', facing: 'right', origin: [0.88, 0.27], glow: '#0DFF72', beam: ['#B06AFF', '#E8D9FF', '#0DC2FF'] },
+            { name: 'GYRO-MOTH', image: 'assets/kaiju/gyro-moth.png', beamImage: 'assets/kaiju/beam.png', particleImages: ['assets/kaiju/gyro-moth-cloud.png', 'assets/kaiju/gyro-moth-particles.png'], entrance: 'left', facing: 'symmetric', origin: [0.5, 0.82], glow: '#5EA1FF', beam: ['#4FC3FF', '#DCF3FF', '#7A5CFF'] },
+            { name: 'ROCK-TORT', image: 'assets/kaiju/rock-tort.png', beamImage: 'assets/kaiju/beam.png', beamHue: 159, entrance: 'right', facing: 'right', origin: [0.88, 0.32], glow: '#FF6B1A', beam: ['#FF3B1A', '#FFD24A', '#FF8A1A'] },
+            { name: 'TENDRIL-KLACK', image: 'assets/kaiju/tendril-klack.png', beamImage: 'assets/kaiju/beam.png', beamHue: -81, entrance: 'right', facing: 'symmetric', origin: [0.5, 0.33], glow: '#2FFFE0', beam: ['#2FFFE0', '#E0FFFA', '#5EFFC7'] }
         ];
 
         function buildSprite(map, palette) {
@@ -1633,7 +1641,9 @@
             const length = Math.hypot(endX - startX, endY - startY);
             const angle = Math.atan2(endY - startY, endX - startX) * (180 / Math.PI);
             beam.style.width = `${length}px`;
-            beam.style.height = '12px';
+            // Scales with the board's own block size instead of a flat px value,
+            // so it reads as a similarly-thick bolt on a phone and on a wide screen.
+            beam.style.height = `${Math.max(22, BLOCK_SIZE * 0.9)}px`;
             beam.style.left = `${startX}px`;
             beam.style.top = `${startY}px`;
             beam.style.transform = `rotate(${angle}deg)`;
@@ -1706,13 +1716,25 @@
             // Sizing/positioning/animation needs the sprite's real pixel dimensions,
             // which for an <img> aren't known until the browser has loaded it - this
             // is deferred behind onload below rather than run synchronously.
+            // Board is to the kaiju's right when it enters from the left, and vice
+            // versa - flip the sprite (on the <img>, not the .kaiju div, since that
+            // div's own transform is driven by the roaring/charging CSS animations
+            // and a static flip there would fight them) whenever its native facing
+            // doesn't already match, so it's never looking away from the board.
+            const requiredFacing = type.entrance === 'left' ? 'right' : 'left';
+            const needsFlip = type.facing !== 'symmetric' && type.facing !== requiredFacing;
+            if (needsFlip) kaiju.querySelector('img').style.transform = 'scaleX(-1)';
+            const effectiveType = needsFlip
+                ? { ...type, origin: [1 - type.origin[0], type.origin[1]] }
+                : type;
+
             const positionAndAnimate = (mapW, mapH) => {
                 const vw = window.innerWidth, vh = window.innerHeight;
-                // Small and mostly off-canvas: they peek in from the side edges to
-                // attack, they don't stomp onto the board and cover the gameplay.
-                let kH = Math.round(vh * 0.26);
+                // Mostly off-canvas: they peek in from the side edges to attack,
+                // they don't stomp onto the board and cover the gameplay.
+                let kH = Math.round(vh * 0.34);
                 let kW = Math.round(kH * mapW / mapH);
-                if (kW > vw * 0.5) { kW = Math.round(vw * 0.5); kH = Math.round(kW * mapH / mapW); }
+                if (kW > vw * 0.62) { kW = Math.round(vw * 0.62); kH = Math.round(kW * mapH / mapW); }
                 kaiju.style.width = kW + 'px';
                 kaiju.style.height = kH + 'px';
                 kaiju.style.filter = `drop-shadow(0 0 16px ${type.glow})`;
@@ -1735,7 +1757,7 @@
                 const b = {}; b[prop] = endVal + 'px';
                 kaiju.animate([a, b], { duration: 1500, easing: 'ease-out', fill: 'forwards' }).onfinish = () => {
                     kaiju.style[prop] = endVal + 'px';
-                    kaijuAttack(kaiju, type);
+                    kaijuAttack(kaiju, effectiveType);
                     setTimeout(() => {
                         const oa = { opacity: 1 }; oa[prop] = endVal + 'px';
                         const ob = { opacity: 0 }; ob[prop] = startVal + 'px';
