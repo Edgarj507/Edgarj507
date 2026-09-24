@@ -207,9 +207,8 @@
             letter-spacing: 1px;
             transition: opacity 0.6s ease-in-out;
         }
-        #musicToggle {
+        .audio-toggle {
             position: fixed;
-            top: 14px;
             left: 14px;
             z-index: 6;
             font-family: 'Press Start 2P', cursive;
@@ -222,8 +221,10 @@
             cursor: pointer;
             transition: background-color 0.2s, transform 0.1s;
         }
-        #musicToggle:active { transform: scale(0.95); }
-        #musicToggle.on { color: #0DFF72; border-color: #0DFF72; }
+        .audio-toggle:active { transform: scale(0.95); }
+        .audio-toggle.on { color: #0DFF72; border-color: #0DFF72; }
+        #musicToggle { top: 14px; }
+        #fxToggle { top: 54px; }
         #crt {
             position: fixed;
             inset: 0;
@@ -343,7 +344,8 @@
 </head>
 <body>
     <div id="cityscapePhoto"></div>
-    <button id="musicToggle">&#9834; MUSIC: OFF</button>
+    <button id="musicToggle" class="audio-toggle">&#9834; MUSIC: OFF</button>
+    <button id="fxToggle" class="audio-toggle on">&#128266; FX: ON</button>
     <div id="cityName" class="city-name"></div>
     <div class="credit">CREATED BY EDGAR R.</div>
     <div class="game-wrapper">
@@ -416,6 +418,7 @@
         const cityscapePhoto = document.getElementById('cityscapePhoto');
         const cityNameEl = document.getElementById('cityName');
         const musicToggle = document.getElementById('musicToggle');
+        const fxToggle = document.getElementById('fxToggle');
 
         const COLS = 12;
         const ROWS = 24;
@@ -1309,7 +1312,7 @@
         //  exists, see the custom-audio block below. midiFreq stays: sfxLevel/
         //  sfxGameOver still use it for their little stingers.)
         // ====================================================================
-        let audioCtx = null, musicOn = false;
+        let audioCtx = null, musicOn = false, fxOn = true;
         const midiFreq = m => 440 * Math.pow(2, (m - 69) / 12);
 
         // --- Native bridge helpers (Haptics / Game Center) ---
@@ -1362,6 +1365,11 @@
             beamFire: 'assets/audio/sfx/beam-fire.mp3',
             laserFire: 'assets/audio/sfx/laser-fire.mp3'
         };
+        // Per-clip playback volume (0-1) for custom sfx that come in hotter than
+        // the rest of the mix; anything not listed here just plays at full volume.
+        const CUSTOM_SFX_VOLUME = {
+            [CUSTOM_SFX_PATHS.blockBreak]: 0.6
+        };
         const customAudioStatus = {}; // path -> 'ok' | 'failed'
         const customAudioElements = {}; // path -> HTMLAudioElement
         let currentMusicTrack = 0; // index into getLoadedMusicTracks(), advances as tracks end
@@ -1369,6 +1377,7 @@
         function probeCustomAudio(path) {
             if (customAudioStatus[path]) return;
             const el = new Audio();
+            el.volume = CUSTOM_SFX_VOLUME[path] ?? 1;
             el.oncanplaythrough = () => { customAudioStatus[path] = 'ok'; };
             el.onerror = () => { customAudioStatus[path] = 'failed'; };
             el.src = path;
@@ -1394,8 +1403,12 @@
             el.play().catch(() => {});
         }
         // Plays the custom clip if it loaded successfully; returns whether it did,
-        // so the caller knows whether to skip its generated fallback.
+        // so the caller knows whether to skip its generated fallback. When FX is
+        // muted this returns true without playing anything, so every sfxXxx()
+        // wrapper (they all check this first) skips its fallback too - one place
+        // silences both custom and generated sound effects.
         function playCustomSfx(path) {
+            if (!fxOn) return true;
             if (customAudioStatus[path] !== 'ok') return false;
             const el = customAudioElements[path];
             try { el.currentTime = 0; el.play().catch(() => {}); } catch (e) {}
@@ -1492,6 +1505,11 @@
         function sfxLaserFire() { if (playCustomSfx(CUSTOM_SFX_PATHS.laserFire)) return; sBlip(1400, 0.05, 'square', 0.08, 2200); }
 
         musicToggle.addEventListener('click', () => { musicOn ? stopMusic() : startMusic(); });
+        fxToggle.addEventListener('click', () => {
+            fxOn = !fxOn;
+            fxToggle.textContent = fxOn ? '\u{1F50A} FX: ON' : '\u{1F507} FX: OFF';
+            fxToggle.classList.toggle('on', fxOn);
+        });
         // ==================== end music ===================================
 
         const controlsActions = {
