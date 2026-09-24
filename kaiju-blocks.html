@@ -1329,7 +1329,15 @@
         // README in each folder for exact filenames) to replace the built-in
         // generated audio below. Missing files fall back to generated sound
         // automatically - nothing else to wire up.
-        const CUSTOM_MUSIC_PATH = 'assets/audio/music/theme.mp3';
+        // Plays as a looping playlist in this order; any file that's missing
+        // is just skipped (see getLoadedMusicTracks) rather than breaking the
+        // rotation, so any subset of these can be dropped in.
+        const CUSTOM_MUSIC_PLAYLIST = [
+            'assets/audio/music/kaiju-showdown.mp3',
+            'assets/audio/music/neon-killswitch.mp3',
+            'assets/audio/music/neon-killswitch-2.mp3',
+            'assets/audio/music/neon-rush.mp3'
+        ];
         const CUSTOM_SFX_PATHS = {
             move: 'assets/audio/sfx/move.mp3',
             rotate: 'assets/audio/sfx/rotate.mp3',
@@ -1345,7 +1353,7 @@
         };
         const customAudioStatus = {}; // path -> 'ok' | 'failed'
         const customAudioElements = {}; // path -> HTMLAudioElement
-        let customMusicEl = null;
+        let currentMusicTrack = 0; // index into getLoadedMusicTracks(), advances as tracks end
 
         function probeCustomAudio(path) {
             if (customAudioStatus[path]) return;
@@ -1358,9 +1366,21 @@
         }
         function preloadCustomAudio() {
             Object.values(CUSTOM_SFX_PATHS).forEach(probeCustomAudio);
-            probeCustomAudio(CUSTOM_MUSIC_PATH);
-            customMusicEl = customAudioElements[CUSTOM_MUSIC_PATH];
-            customMusicEl.loop = true;
+            CUSTOM_MUSIC_PLAYLIST.forEach(probeCustomAudio);
+        }
+        // Checked lazily (not at preload time) since probes are still async
+        // when preloadCustomAudio() returns.
+        function getLoadedMusicTracks() {
+            return CUSTOM_MUSIC_PLAYLIST.filter(p => customAudioStatus[p] === 'ok');
+        }
+        function playMusicTrack(index) {
+            const tracks = getLoadedMusicTracks();
+            if (tracks.length === 0) return;
+            currentMusicTrack = ((index % tracks.length) + tracks.length) % tracks.length;
+            const el = customAudioElements[tracks[currentMusicTrack]];
+            el.currentTime = 0;
+            el.onended = () => { if (musicOn) playMusicTrack(currentMusicTrack + 1); };
+            el.play().catch(() => {});
         }
         // Plays the custom clip if it loaded successfully; returns whether it did,
         // so the caller knows whether to skip its generated fallback.
@@ -1381,21 +1401,24 @@
             }
             if (audioCtx.state === 'suspended') audioCtx.resume();
         }
-        // Only plays if assets/audio/music/theme.mp3 exists (no generated music
-        // anymore) - still flips the toggle/button state either way so it's not
-        // stuck showing OFF, it's just silent without a file.
+        // Only plays if at least one CUSTOM_MUSIC_PLAYLIST file exists (no
+        // generated music anymore) - still flips the toggle/button state
+        // either way so it's not stuck showing OFF, it's just silent without
+        // any files. Resumes on whichever track was playing (or next queued)
+        // rather than always restarting the playlist from track 1.
         function startMusic() {
             ensureAudio();
-            if (customAudioStatus[CUSTOM_MUSIC_PATH] === 'ok') {
-                customMusicEl.currentTime = 0;
-                customMusicEl.play().catch(() => {});
-            }
             musicOn = true;
             musicToggle.textContent = '♪ MUSIC: ON';
             musicToggle.classList.add('on');
+            playMusicTrack(currentMusicTrack);
         }
         function stopMusic() {
-            if (customMusicEl) customMusicEl.pause();
+            getLoadedMusicTracks().forEach(p => {
+                const el = customAudioElements[p];
+                el.onended = null;
+                el.pause();
+            });
             musicOn = false;
             musicToggle.textContent = '♪ MUSIC: OFF';
             musicToggle.classList.remove('on');
