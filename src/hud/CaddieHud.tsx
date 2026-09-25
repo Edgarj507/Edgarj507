@@ -1,46 +1,27 @@
-import { useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Aperture, Check, ChevronLeft, Flag, Mountain, Thermometer } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowDown, ArrowUp, Aperture, Check, ChevronLeft, ChevronRight, Flag, Mountain, RotateCcw, Thermometer } from 'lucide-react';
 import { MapPlaceholder } from './MapPlaceholder';
+import { PuttView } from './PuttView';
 import { playsLike, recommendClub, windArrowDeg, type Club, type Conditions } from '../lib/caddie';
-import { createSecureStore } from '../lib/secureStore';
+import { lieFor, type Hole } from '../data/course';
+import { fmtToPar, type Shot } from '../lib/round';
 
-// --- Mock feeds (replace with GPS / course DB / weather API) ---
-const HOLE = {
-  number: 4,
-  par: 4,
-  bearingDeg: 20,
-  /** Per lie after N strokes: line = yards to the aim target, pin = yards to the flag, elev = target elevation delta (yds). */
-  lies: [
-    { line: 250, pin: 412, elev: -4 },
-    { line: 164, pin: 164, elev: 5 },
-    { line: 38, pin: 38, elev: 1 },
-    { line: 6, pin: 6, elev: 0 },
-  ],
-};
+// Mock weather feed (replace with weather API).
 const WEATHER = { tempF: 72, windMph: 12, windFromDeg: 225 };
-const BAG: Club[] = [
-  { label: 'Dr', carry: 265 }, { label: '3W', carry: 240 }, { label: '5W', carry: 225 },
-  { label: '4i', carry: 200 }, { label: '5i', carry: 190 }, { label: '6i', carry: 178 },
-  { label: '7i', carry: 166 }, { label: '8i', carry: 154 }, { label: '9i', carry: 142 },
-  { label: 'PW', carry: 130 }, { label: '52°', carry: 110 }, { label: '56°', carry: 92 },
-  { label: '60°', carry: 70 }, { label: 'Putter', carry: 0 },
-];
-
-interface Shot { club: string; line: number; playsLike: number; t: number }
-interface RoundState { hole: number; shots: Shot[] }
-
-const ROUND_KEY = 'eg.round';
-const store = (() => {
-  try {
-    return createSecureStore(window.localStorage);
-  } catch {
-    return null; // storage blocked (private mode / sandboxed webview) — run in-memory
-  }
-})();
 
 export interface Buddy { id: string; name: string; liveScore: string }
 
 interface Props {
+  hole: Hole;
+  strokes: number;
+  /** Round total vs par for holes played. */
+  roundToPar: number;
+  isLastHole: boolean;
+  bag: Club[];
+  onLog: (shot: Shot) => void;
+  onUndo: () => void;
+  onNext: () => void;
+  onScorecard: () => void;
   onExit: () => void;
   buddies?: Buddy[];
   tournamentMode?: boolean;
@@ -49,47 +30,30 @@ interface Props {
 const glass = 'bg-black/40 backdrop-blur-xl backdrop-saturate-150 border border-white/10 shadow-lg';
 const scoreColor = (s: string) => (s.startsWith('-') ? 'text-red-400' : s === 'E' ? 'text-emerald-400' : 'text-white/90');
 
-export function CaddieHud({ onExit, buddies = [], tournamentMode = false }: Props) {
-  const [round, setRound] = useState<RoundState>({ hole: HOLE.number, shots: [] });
+export function CaddieHud({
+  hole, strokes, roundToPar, isLastHole, bag, onLog, onUndo, onNext, onScorecard, onExit, buddies = [], tournamentMode = false,
+}: Props) {
   const [justLogged, setJustLogged] = useState(false);
   const [puttView, setPuttView] = useState(false);
-  const hydrated = useRef(false);
-
-  useEffect(() => {
-    if (!store) {
-      hydrated.current = true;
-      return;
-    }
-    let alive = true;
-    store.load<RoundState>(ROUND_KEY).then((saved) => {
-      if (alive && saved?.hole === HOLE.number && Array.isArray(saved.shots)) setRound(saved);
-      hydrated.current = true;
-    });
-    return () => { alive = false; };
-  }, []);
-
-  useEffect(() => {
-    if (hydrated.current) void store?.save(ROUND_KEY, round);
-  }, [round]);
 
   useEffect(() => {
     if (!justLogged) return;
-    const id = setTimeout(() => setJustLogged(false), 1200);
+    const id = setTimeout(() => setJustLogged(false), 900);
     return () => clearTimeout(id);
   }, [justLogged]);
 
-  const strokes = round.shots.length;
-  const lie = HOLE.lies[Math.min(strokes, HOLE.lies.length - 1)];
+  const lie = lieFor(hole, strokes);
   const conditions: Conditions = { ...WEATHER, elevationDeltaYds: lie.elev };
 
-  const calc = playsLike(lie.line, HOLE.bearingDeg, conditions);
+  const calc = playsLike(lie.line, hole.bearingDeg, conditions);
   const target = tournamentMode ? lie.line : calc.yards;
-  const club = recommendClub(target, BAG);
-  const arrowDeg = windArrowDeg(WEATHER.windFromDeg, HOLE.bearingDeg);
+  // Putter only once within 20y; otherwise recommend from full-swing clubs.
+  const club = lie.pin <= 20 ? bag.find((c) => c.carry === 0) ?? recommendClub(target, bag) : recommendClub(target, bag.filter((c) => c.carry > 0));
+  const arrowDeg = windArrowDeg(WEATHER.windFromDeg, hole.bearingDeg);
 
   const logShot = () => {
     if (justLogged || !club) return;
-    setRound((r) => ({ ...r, shots: [...r.shots, { club: club.label, line: lie.line, playsLike: target, t: Date.now() }] }));
+    onLog({ club: club.label, line: lie.line, playsLike: target, t: Date.now() });
     setJustLogged(true);
     navigator.vibrate?.(15);
   };
@@ -115,23 +79,31 @@ export function CaddieHud({ onExit, buddies = [], tournamentMode = false }: Prop
           >
             <ChevronLeft size={18} strokeWidth={2.5} />
           </button>
-          <div className={`${glass} flex items-stretch gap-3 rounded-2xl px-3 py-2`}>
+          <button
+            onClick={onScorecard}
+            aria-label="Open scorecard"
+            className={`${glass} flex items-stretch gap-3 rounded-2xl px-3 py-2 text-left transition active:scale-[0.98]`}
+          >
             <div className="flex flex-col justify-between">
               <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/50">Hole</span>
-              <span className="font-mono text-3xl font-semibold leading-none tabular-nums">{HOLE.number}</span>
+              <span className="font-mono text-3xl font-semibold leading-none tabular-nums">{hole.number}</span>
             </div>
             <span className="w-px bg-white/15" />
             <dl className="flex flex-col justify-center gap-1 whitespace-nowrap text-[11px] font-semibold uppercase tracking-wider">
               <div className="flex justify-between gap-3">
                 <dt className="text-white/50">Par</dt>
-                <dd className="font-mono tabular-nums">{HOLE.par}</dd>
+                <dd className="font-mono tabular-nums">{hole.par}</dd>
               </div>
               <div className="flex justify-between gap-3 text-emerald-400">
                 <dt>Strokes</dt>
                 <dd className="font-mono tabular-nums">{strokes}</dd>
               </div>
+              <div className="flex justify-between gap-3 text-[9px] text-white/40">
+                <dt>Card</dt>
+                <dd className="font-mono text-white/70">{fmtToPar(roundToPar)}</dd>
+              </div>
             </dl>
-          </div>
+          </button>
         </div>
 
         {/* Top-right: weather → elevation → distance to pin */}
@@ -191,11 +163,8 @@ export function CaddieHud({ onExit, buddies = [], tournamentMode = false }: Prop
               </div>
             ) : <span />}
             <button
-              onClick={() => setPuttView((v) => !v)}
-              aria-pressed={puttView}
-              className={`pointer-events-auto flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 backdrop-blur-xl transition active:scale-95 ${
-                puttView ? 'border-emerald-400 bg-emerald-500 text-black' : 'border-white/10 bg-black/50 text-emerald-400'
-              }`}
+              onClick={() => setPuttView(true)}
+              className="pointer-events-auto flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-emerald-500/40 bg-black/50 px-3.5 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.25)] backdrop-blur-xl transition active:scale-95"
             >
               <Aperture size={14} />
               <span className="text-[10px] font-black uppercase tracking-widest">Putt View</span>
@@ -216,21 +185,40 @@ export function CaddieHud({ onExit, buddies = [], tournamentMode = false }: Prop
               </div>
             </div>
 
-            {/* Log Shot */}
-            <button
-              onClick={logShot}
-              disabled={justLogged}
-              className={`flex h-11 w-full items-center justify-center gap-2 rounded-2xl text-xs font-black uppercase tracking-[0.2em] transition active:scale-[0.98] ${
-                justLogged
-                  ? 'bg-white/10 text-white/60'
-                  : 'bg-emerald-500 text-black shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:bg-emerald-400'
-              }`}
-            >
-              {justLogged ? (<><Check size={16} strokeWidth={3} /> Logged</>) : 'Log Shot'}
-            </button>
+            {/* Undo · Log Shot · Next Hole */}
+            <div className="flex gap-2">
+              <button
+                onClick={onUndo}
+                disabled={strokes === 0}
+                aria-label="Undo last shot"
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/5 text-white/80 transition active:scale-95 disabled:opacity-30"
+              >
+                <RotateCcw size={16} />
+              </button>
+              <button
+                onClick={logShot}
+                disabled={justLogged}
+                className={`flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl text-xs font-black uppercase tracking-[0.2em] transition active:scale-[0.98] ${
+                  justLogged
+                    ? 'bg-white/10 text-white/60'
+                    : 'bg-emerald-500 text-black shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:bg-emerald-400'
+                }`}
+              >
+                {justLogged ? (<><Check size={16} strokeWidth={3} /> Logged</>) : 'Log Shot'}
+              </button>
+              <button
+                onClick={onNext}
+                className="flex h-11 shrink-0 items-center gap-0.5 rounded-2xl border border-white/10 bg-white/10 pl-3 pr-2 text-[10px] font-black uppercase tracking-widest text-white transition active:scale-95"
+              >
+                {isLastHole ? 'Finish' : 'Next'}
+                <ChevronRight size={14} />
+              </button>
+            </div>
           </section>
         </div>
       </div>
+
+      {puttView && <PuttView lie={lie} holeNumber={hole.number} onClose={() => setPuttView(false)} />}
     </div>
   );
 }

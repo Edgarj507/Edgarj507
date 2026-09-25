@@ -2,12 +2,18 @@ import { useState } from 'react';
 import {
   ChevronLeft, Search, Check, Wind, Sun, Trophy, Users, MapPin,
   Target, ChevronRight, Briefcase, Share2, QrCode, UserPlus, ScanLine,
-  MessageCircle, AtSign, Link2
+  MessageCircle, AtSign, Link2, Minus, Plus
 } from 'lucide-react';
 import { CaddieHud } from './hud/CaddieHud';
 import { MapPlaceholder } from './hud/MapPlaceholder';
+import { Scorecard } from './views/Scorecard';
+import { COURSE } from './data/course';
+import { HOLES, totals } from './lib/round';
+import { useBag, useRound } from './lib/hooks';
 
-type View = 'menu' | 'course' | 'invite' | 'bag' | 'friends' | 'hud';
+const PARS = COURSE.holes.map(h => h.par);
+
+type View = 'menu' | 'course' | 'invite' | 'bag' | 'friends' | 'hud' | 'scorecard';
 type BagKey = 'brands' | 'models' | 'clubs';
 
 const MOCK_DATA = {
@@ -38,10 +44,10 @@ const MOCK_DATA = {
       { rank: 4, name: 'Sarah Jenkins', handle: '@s_jenks', score: '+4' },
     ],
     network: [
-      { id: 'f1', name: 'Jordan Spieth', handle: '@jspieth', liveScore: '-1' },
-      { id: 'f2', name: 'Justin Thomas', handle: '@jthomas', liveScore: 'E' },
-      { id: 'f3', name: 'Rickie Fowler', handle: '@rickief', liveScore: '+1' },
-      { id: 'f4', name: 'Max Homa', handle: '@max.homa', liveScore: '+2' }
+      { id: 'f1', name: 'Jordan Spieth', handle: '@jspieth', liveScore: '-1', hcp: 2.1 },
+      { id: 'f2', name: 'Justin Thomas', handle: '@jthomas', liveScore: 'E', hcp: 3.4 },
+      { id: 'f3', name: 'Rickie Fowler', handle: '@rickief', liveScore: '+1', hcp: 5.0 },
+      { id: 'f4', name: 'Max Homa', handle: '@max.homa', liveScore: '+2', hcp: 1.8 }
     ]
   }
 };
@@ -60,6 +66,8 @@ export default function App() {
 
   // My Bag State
   const [bagStep, setBagStep] = useState(1);
+  const [round, dispatch] = useRound();
+  const [bag, setBag] = useBag();
   const [bagSetup, setBagSetup] = useState<Record<BagKey, string[]>>({ brands: [], models: [], clubs: [] });
 
   // Friends State
@@ -195,7 +203,7 @@ export default function App() {
       { id: 'white', color: 'bg-gray-100', border: 'border-white' },
       { id: 'red', color: 'bg-red-600', border: 'border-red-400' },
     ];
-    const formats = ['Stroke Play', 'Match Play', 'Scramble'];
+    const formats = ['Stroke Play', 'Match Play', 'Scramble', 'Stableford', 'Best Ball', 'Alt Shot'];
 
     return (
       <div className="relative w-full h-full flex flex-col p-5">
@@ -378,6 +386,27 @@ export default function App() {
                   </div>
                 </div>
               ))}
+
+              <div className="flex flex-col gap-2 bg-black/30 border border-white/5 rounded-xl p-3">
+                <div className="flex items-baseline justify-between pl-1">
+                  <span className="text-[9px] text-white/50 uppercase font-bold tracking-widest">Carry Yardages</span>
+                  <span className="text-[9px] text-emerald-400/70">Drives HUD club picks</span>
+                </div>
+                {bag.map((club, idx) => (
+                  <div key={club.label} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-1.5">
+                    <span className="text-xs font-bold text-white">{club.label}</span>
+                    {club.carry === 0 ? (
+                      <span className="text-[10px] text-white/40 uppercase tracking-wider">On green</span>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => setBag(b => b.map((c, i) => i === idx ? { ...c, carry: Math.max(5, c.carry - 5) } : c))} aria-label={`Decrease ${club.label} carry`} className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white/70 active:scale-90"><Minus size={12} /></button>
+                        <span className="w-12 text-center font-mono text-xs text-emerald-400">{club.carry}y</span>
+                        <button onClick={() => setBag(b => b.map((c, i) => i === idx ? { ...c, carry: Math.min(400, c.carry + 5) } : c))} aria-label={`Increase ${club.label} carry`} className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white/70 active:scale-90"><Plus size={12} /></button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -469,7 +498,7 @@ export default function App() {
                           </div>
                           <div className="flex flex-col">
                             <span className="font-bold text-[11px] text-white/90">{friend.name}</span>
-                            <span className="text-white/40 text-[9px]">{friend.handle}</span>
+                            <span className="text-white/40 text-[9px]">{friend.handle} · {friend.hcp} HCP</span>
                           </div>
                         </div>
                       </div>
@@ -542,6 +571,15 @@ export default function App() {
       <div className="relative h-full w-full overflow-hidden bg-black desktop:aspect-[9/19.5] desktop:h-[min(860px,calc(100dvh-2rem))] desktop:w-auto desktop:rounded-[3rem] desktop:border-[8px] desktop:border-zinc-900 desktop:shadow-[0_0_50px_rgba(0,0,0,0.5)]">
         {currentView === 'hud' ? (
           <CaddieHud
+            hole={COURSE.holes[round.current]}
+            strokes={round.shots[round.current].length}
+            roundToPar={totals(round.shots.map((h, i) => (i === round.current ? [] : h)), PARS).toPar}
+            isLastHole={round.current === HOLES - 1}
+            bag={bag}
+            onLog={shot => dispatch({ type: 'log', shot })}
+            onUndo={() => dispatch({ type: 'undo' })}
+            onNext={() => (round.current === HOLES - 1 ? setCurrentView('scorecard') : dispatch({ type: 'next' }))}
+            onScorecard={() => setCurrentView('scorecard')}
             onExit={() => setCurrentView('menu')}
             buddies={hudBuddies}
             tournamentMode={courseSetup.tournamentMode}
@@ -558,6 +596,19 @@ export default function App() {
               {currentView === 'invite' && ViewInvite()}
               {currentView === 'bag' && ViewBag()}
               {currentView === 'friends' && ViewFriends()}
+              {currentView === 'scorecard' && (
+                <Scorecard
+                  round={round}
+                  onBack={() => setCurrentView('hud')}
+                  onSelectHole={i => { dispatch({ type: 'goto', hole: i }); setCurrentView('hud'); }}
+                  onNewRound={() => {
+                    if (window.confirm('End this round and clear all scores?')) {
+                      dispatch({ type: 'reset' });
+                      setCurrentView('menu');
+                    }
+                  }}
+                />
+              )}
             </div>
           </>
         )}
