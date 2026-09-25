@@ -1,5 +1,5 @@
-import { fmtToPar, HOLES, isRoundState, newRound, roundReducer, totals } from './round';
-import { COURSE, lieFor, planLies } from '../data/course';
+import { fmtToPar, HOLES, holeRange, isRoundState, newRound, roundReducer, totals } from './round';
+import { COURSE, holesFor, lieFor, planLies } from '../data/course';
 
 const shot = { club: '7i', line: 160, playsLike: 162, t: 0 };
 
@@ -28,7 +28,8 @@ describe('roundReducer', () => {
 describe('isRoundState', () => {
   it('accepts a fresh round and rejects junk', () => {
     expect(isRoundState(newRound())).toBe(true);
-    expect(isRoundState({ v: 2, current: 40, shots: [] })).toBe(false);
+    expect(isRoundState({ v: 2, current: 0, shots: [] })).toBe(false);
+    expect(isRoundState({ ...newRound({ tee: 'blue', format: 'Stroke Play', length: 'back' }), current: 2 })).toBe(false);
     expect(isRoundState(null)).toBe(false);
   });
 });
@@ -60,5 +61,38 @@ describe('course', () => {
   it('par 3 tee shot aims at the pin', () => {
     const l = planLies(176, 3)[0];
     expect(l.line).toBe(l.pin);
+  });
+});
+
+describe('round length', () => {
+  it('back nine starts on hole 10 and cannot leave 10–18', () => {
+    let s = newRound({ tee: 'blue', format: 'Stroke Play', length: 'back' });
+    expect(s.current).toBe(9);
+    expect(roundReducer(s, { type: 'goto', hole: 3 }).current).toBe(9);
+    s = roundReducer(s, { type: 'goto', hole: 17 });
+    expect(roundReducer(s, { type: 'next' }).current).toBe(17);
+  });
+  it('front nine stops at hole 9', () => {
+    let s = newRound({ tee: 'blue', format: 'Stroke Play', length: 'front' });
+    s = roundReducer(s, { type: 'goto', hole: 8 });
+    expect(roundReducer(s, { type: 'next' }).current).toBe(8);
+    expect(roundReducer(s, { type: 'goto', hole: 9 }).current).toBe(8);
+    expect(holeRange('front')).toEqual({ start: 0, end: 8 });
+  });
+  it('start resets scores with the new config', () => {
+    let s = roundReducer(newRound(), { type: 'log', shot });
+    s = roundReducer(s, { type: 'start', config: { tee: 'red', format: 'Stableford', length: 'back' } });
+    expect(s.shots.flat()).toHaveLength(0);
+    expect(s.config.tee).toBe('red');
+    expect(s.current).toBe(9);
+  });
+});
+
+describe('tees', () => {
+  it('forward tees are shorter; par is unchanged', () => {
+    const black = holesFor('black'), red = holesFor('red');
+    expect(red[0].yards).toBeLessThan(black[0].yards);
+    expect(red.map((h) => h.par)).toEqual(black.map((h) => h.par));
+    expect(red[0].lies[0].pin).toBe(red[0].yards);
   });
 });

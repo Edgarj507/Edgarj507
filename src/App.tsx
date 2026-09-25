@@ -2,40 +2,30 @@ import { useState } from 'react';
 import {
   ChevronLeft, Search, Check, Wind, Sun, Trophy, Users, MapPin,
   Target, ChevronRight, Briefcase, Share2, QrCode, UserPlus, ScanLine,
-  MessageCircle, AtSign, Link2, Minus, Plus
+  MessageCircle, AtSign, Link2
 } from 'lucide-react';
 import { CaddieHud } from './hud/CaddieHud';
 import { MapPlaceholder } from './hud/MapPlaceholder';
 import { Scorecard } from './views/Scorecard';
-import { COURSE } from './data/course';
-import { HOLES, totals } from './lib/round';
+import { BagWizard } from './views/BagWizard';
+import { COURSE, PAR_BY_HOLE as PARS, TEES, holesFor, type TeeId } from './data/course';
+import { FORMATS, hasStrokes, holeRange, sameConfig, type Format, type RoundConfig, type RoundLength } from './lib/round';
+import { mockPartnerScore, summarize } from './lib/scoring';
 import { useBag, useRound } from './lib/hooks';
 
-const PARS = COURSE.holes.map(h => h.par);
+const FORMAT_HELP: Record<Format, string> = {
+  'Stroke Play': 'Every stroke counts. Total vs par.',
+  'Match Play': 'Win, lose or halve each hole against your opponent.',
+  'Stableford': 'Points per hole: bogey 1, par 2, birdie 3, eagle 4.',
+  'Scramble': 'Team picks the best shot each time; one team score.',
+  'Best Ball': 'Each plays their own ball; the lower score counts for the team.',
+  'Alt Shot': 'Partners alternate shots on one ball; one team score.',
+};
+const NEEDS_PARTNER: Format[] = ['Match Play', 'Best Ball'];
 
 type View = 'menu' | 'course' | 'invite' | 'bag' | 'friends' | 'hud' | 'scorecard';
-type BagKey = 'brands' | 'models' | 'clubs';
 
 const MOCK_DATA = {
-  bag: {
-    brands: ['Titleist', 'TaylorMade', 'Callaway', 'PING', 'Cobra', 'Mizuno', 'Srixon', 'PXG'],
-    models: {
-      'Titleist': ['T100', 'T150', 'T200', 'T250', 'T350', 'T400', '620 CB', '620 MB', 'TSR2', 'TSR3', 'GT2', 'GT3', 'Vokey SM10', 'Scotty Cameron'],
-      'TaylorMade': ['P790', 'P770', 'Qi10', 'MG4', 'Spider'],
-      'Callaway': ['Apex', 'Paradym Ai Smoke', 'Jaws Raw', 'Odyssey'],
-      'PING': ['Blueprint', 'G430', 's159', 'PLD'],
-      'Cobra': ['Aerojet', 'King Tour', 'Snakebite'],
-      'Mizuno': ['Pro 241', 'Pro 243', 'T24'],
-      'Srixon': ['ZX5', 'ZX7', 'Cleveland RTX'],
-      'PXG': ['0311 GEN6', '0311 Sugar Daddy']
-    },
-    specs: {
-      'Woods/Drivers': ['8.0°', '9.0°', '10.5°', '13.5°', '15.0°', '16.5°', '18.0°', '21.0°'],
-      'Irons': ['2i', '3i', '4i', '5i', '6i', '7i', '8i', '9i', 'PW', 'AW', 'GW'],
-      'Wedges': ['46°', '48°', '50°', '52°', '54°', '56°', '58°', '60°', '62°', '64°'],
-      'Putters': ['Blade Putter', 'Mallet Putter']
-    }
-  },
   friends: {
     leaderboard: [
       { rank: 1, name: 'Alex Thompson', handle: '@alex_t', score: '-3' },
@@ -58,17 +48,23 @@ export default function App() {
   
   // Select Course / Round State
   const [courseSetup, setCourseSetup] = useState({
-    tee: 'blue',
-    format: 'Stroke Play',
+    tee: 'blue' as TeeId,
+    format: 'Stroke Play' as Format,
+    length: '18' as RoundLength,
     tournamentMode: false,
     selectedFriends: [] as string[]
   });
+  const setupConfig: RoundConfig = { tee: courseSetup.tee, format: courseSetup.format, length: courseSetup.length };
 
-  // My Bag State
-  const [bagStep, setBagStep] = useState(1);
   const [round, dispatch] = useRound();
   const [bag, setBag] = useBag();
-  const [bagSetup, setBagSetup] = useState<Record<BagKey, string[]>>({ brands: [], models: [], clubs: [] });
+
+  const startRound = () => {
+    if (hasStrokes(round) && sameConfig(round.config, setupConfig)) return setCurrentView('hud');
+    if (hasStrokes(round) && !window.confirm('Start a new round with these settings? Current scores will be cleared.')) return;
+    dispatch({ type: 'start', config: setupConfig });
+    setCurrentView('hud');
+  };
 
   // Friends State
   const [friendsTab, setFriendsTab] = useState<'leaderboard' | 'network'>('leaderboard'); // 'leaderboard', 'network'
@@ -197,13 +193,22 @@ export default function App() {
   };
 
   const ViewCourse = () => {
-    const teeOptions = [
+    const teeOptions: { id: TeeId; color: string; border: string }[] = [
       { id: 'black', color: 'bg-zinc-900', border: 'border-zinc-700' },
       { id: 'blue', color: 'bg-blue-600', border: 'border-blue-400' },
       { id: 'white', color: 'bg-gray-100', border: 'border-white' },
       { id: 'red', color: 'bg-red-600', border: 'border-red-400' },
     ];
-    const formats = ['Stroke Play', 'Match Play', 'Scramble', 'Stableford', 'Best Ball', 'Alt Shot'];
+    const setupRange = holeRange(courseSetup.length);
+    const teeYards = (tee: TeeId) =>
+      holesFor(tee).slice(setupRange.start, setupRange.end + 1).reduce((a, h) => a + h.yards, 0);
+    const setupPar = PARS.slice(setupRange.start, setupRange.end + 1).reduce((a, b) => a + b, 0);
+    const is9 = courseSetup.length !== '18';
+    const resuming = hasStrokes(round) && sameConfig(round.config, setupConfig);
+    const pill = (active: boolean) =>
+      `flex-1 py-2 rounded-lg text-[10px] font-bold tracking-widest uppercase transition-all border ${
+        active ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'border-transparent text-white/50 hover:text-white/80'
+      }`;
 
     return (
       <div className="relative w-full h-full flex flex-col p-5">
@@ -226,8 +231,32 @@ export default function App() {
             </div>
             <button className="self-start mt-1 bg-white/10 border border-white/10 rounded-full px-3 py-1.5 flex items-center gap-1.5 hover:bg-white/20 transition-colors">
               <MapPin size={10} className="text-emerald-400" />
-              <span className="text-[11px] font-medium text-white/90">Somerby Golf Club</span>
+              <span className="text-[11px] font-medium text-white/90">{COURSE.name}</span>
             </button>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">Holes</span>
+            <div role="radiogroup" aria-label="Round length" className="flex gap-1 bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-1">
+              <button role="radio" aria-checked={!is9} onClick={() => setCourseSetup({ ...courseSetup, length: '18' })} className={pill(!is9)}>18 Holes</button>
+              <button role="radio" aria-checked={is9} onClick={() => setCourseSetup({ ...courseSetup, length: is9 ? courseSetup.length : 'front' })} className={pill(is9)}>9 Holes</button>
+            </div>
+            {is9 && (
+              <div role="radiogroup" aria-label="Which nine" className="grid grid-cols-2 gap-2">
+                {([['front', 'Front 9', 'Holes 1–9'], ['back', 'Back 9', 'Holes 10–18']] as const).map(([id, label, sub]) => (
+                  <button
+                    key={id}
+                    role="radio"
+                    aria-checked={courseSetup.length === id}
+                    onClick={() => setCourseSetup({ ...courseSetup, length: id })}
+                    className={`rounded-xl border px-3 py-2.5 text-left backdrop-blur-md transition-all ${courseSetup.length === id ? 'bg-emerald-500/15 border-emerald-500/50' : 'bg-black/40 border-white/10 hover:bg-white/5'}`}
+                  >
+                    <div className={`text-[11px] font-bold uppercase tracking-wider ${courseSetup.length === id ? 'text-emerald-400' : 'text-white/80'}`}>{label}</div>
+                    <div className="text-[9px] text-white/40 mt-0.5">{sub}</div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col gap-2">
@@ -245,23 +274,32 @@ export default function App() {
 
           <div className="flex flex-col gap-2">
             <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">Tees</span>
-            <div className="flex items-center gap-4 bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-4">
-              {teeOptions.map(tee => (
-                <button
-                  key={tee.id}
-                  onClick={() => setCourseSetup({...courseSetup, tee: tee.id})}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${tee.color} ${tee.border} border-2 
-                    ${courseSetup.tee === tee.id ? 'ring-2 ring-emerald-500 ring-offset-2 ring-offset-zinc-900 scale-110' : 'opacity-70'}
-                  `}
-                />
-              ))}
+            <div className="bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-3">
+              <div className="flex items-center justify-between px-1">
+                {teeOptions.map(tee => (
+                  <button
+                    key={tee.id}
+                    aria-label={`${TEES[tee.id].label} tees`}
+                    aria-pressed={courseSetup.tee === tee.id}
+                    onClick={() => setCourseSetup({...courseSetup, tee: tee.id})}
+                    className="flex flex-col items-center gap-1.5"
+                  >
+                    <span className={`w-8 h-8 rounded-full transition-all ${tee.color} ${tee.border} border-2 ${courseSetup.tee === tee.id ? 'ring-2 ring-emerald-500 ring-offset-2 ring-offset-zinc-900 scale-110' : 'opacity-60'}`} />
+                    <span className={`font-mono text-[10px] ${courseSetup.tee === tee.id ? 'text-white' : 'text-white/40'}`}>{teeYards(tee.id).toLocaleString()}y</span>
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 flex justify-between border-t border-white/10 pt-2 text-[9px] font-bold uppercase tracking-widest text-white/40">
+                <span>{TEES[courseSetup.tee].label} · Par {setupPar}</span>
+                <span>Rating {TEES[courseSetup.tee].rating} / Slope {TEES[courseSetup.tee].slope}</span>
+              </div>
             </div>
           </div>
 
           <div className="flex flex-col gap-2">
             <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">Format</span>
             <div className="grid grid-cols-3 gap-2">
-              {formats.map(format => (
+              {FORMATS.map(format => (
                 <button
                   key={format}
                   onClick={() => setCourseSetup({...courseSetup, format})}
@@ -273,6 +311,16 @@ export default function App() {
                 </button>
               ))}
             </div>
+            <p className="px-1 text-[10px] leading-snug text-white/50">
+              {FORMAT_HELP[courseSetup.format]}
+              {NEEDS_PARTNER.includes(courseSetup.format) && (
+                <span className="text-emerald-400/80">
+                  {' '}{courseSetup.selectedFriends.length
+                    ? `Partner: ${MOCK_DATA.friends.network.find(f => f.id === courseSetup.selectedFriends[0])?.name}.`
+                    : courseSetup.format === 'Match Play' ? 'No player invited: you play against par.' : 'Invite a player to pair up.'}
+                </span>
+              )}
+            </p>
           </div>
 
           <div className="flex items-center justify-between bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-4 mb-2">
@@ -288,133 +336,8 @@ export default function App() {
 
         <div className="absolute bottom-6 left-5 right-5 z-20">
           <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl p-1.5 shadow-2xl">
-            <button onClick={() => setCurrentView('hud')} className="w-full bg-emerald-500 text-white rounded-xl py-3.5 font-bold text-xs tracking-widest uppercase hover:bg-emerald-400 active:scale-[0.98] transition-all">
-              Start Round
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const ViewBag = () => {
-    const handleToggle = (item: string, type: BagKey) => {
-      const list = bagSetup[type];
-      const newList = list.includes(item) ? list.filter(i => i !== item) : [...list, item];
-      setBagSetup({...bagSetup, [type]: newList});
-    };
-
-    const handleBack = () => {
-      if (bagStep > 1) setBagStep(bagStep - 1);
-      else setCurrentView('menu');
-    };
-
-    const handleNext = () => {
-      if (bagStep < 3) setBagStep(bagStep + 1);
-      else setCurrentView('menu');
-    };
-
-    const availableModels = bagSetup.brands.flatMap(b => MOCK_DATA.bag.models[b as keyof typeof MOCK_DATA.bag.models] || []);
-    
-    return (
-      <div className="relative w-full h-full flex flex-col p-5">
-        <div className="flex items-center justify-between z-10 mb-6">
-          <div className="flex items-center gap-3">
-            <button onClick={handleBack} className="h-8 w-8 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center text-white/80 hover:bg-white/10 active:scale-95">
-              <ChevronLeft size={16} />
-            </button>
-            <h2 className="text-white font-bold text-xs tracking-widest uppercase">My Bag</h2>
-          </div>
-          <span className="text-[10px] text-emerald-400 font-bold tracking-widest bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
-            STEP {bagStep}/3
-          </span>
-        </div>
-
-        <div className="flex flex-col z-10 overflow-y-auto no-scrollbar pb-24">
-          {bagStep === 1 && (
-            <div className="flex flex-col gap-3">
-              <p className="text-[11px] text-white/60 mb-2">Select the brands in your bag.</p>
-              <div className="grid grid-cols-2 gap-3">
-                {MOCK_DATA.bag.brands.map(brand => (
-                  <button
-                    key={brand}
-                    onClick={() => handleToggle(brand, 'brands')}
-                    className={`p-3 rounded-xl border backdrop-blur-md flex items-center justify-between transition-all ${bagSetup.brands.includes(brand) ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-black/40 border-white/10 text-white/80'}`}
-                  >
-                    <span className="font-bold text-xs tracking-wide">{brand}</span>
-                    {bagSetup.brands.includes(brand) && <Check size={14} className="text-emerald-400" />}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {bagStep === 2 && (
-            <div className="flex flex-col gap-3">
-              <p className="text-[11px] text-white/60 mb-2">Select your specific models.</p>
-              <div className="flex flex-col gap-2">
-                {availableModels.length > 0 ? availableModels.map(model => (
-                  <button
-                    key={model}
-                    onClick={() => handleToggle(model, 'models')}
-                    className={`p-3 rounded-xl border backdrop-blur-md flex items-center justify-between transition-all ${bagSetup.models.includes(model) ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-black/40 border-white/10 text-white/80'}`}
-                  >
-                    <span className="font-bold text-[11px] tracking-wide">{model}</span>
-                    {bagSetup.models.includes(model) && <Check size={14} className="text-emerald-400" />}
-                  </button>
-                )) : <p className="text-[11px] text-white/40 text-center py-10">No brands selected.</p>}
-              </div>
-            </div>
-          )}
-
-          {bagStep === 3 && (
-            <div className="flex flex-col gap-4">
-              <p className="text-[11px] text-white/60 mb-1">Select exact lofts & clubs.</p>
-              {Object.entries(MOCK_DATA.bag.specs).map(([category, specs]) => (
-                <div key={category} className="flex flex-col gap-2 bg-black/30 border border-white/5 rounded-xl p-3">
-                  <span className="text-[9px] text-white/50 uppercase font-bold tracking-widest pl-1">{category}</span>
-                  <div className="flex flex-wrap gap-2">
-                    {specs.map(spec => (
-                      <button
-                        key={spec}
-                        onClick={() => handleToggle(spec, 'clubs')}
-                        className={`py-1.5 px-2.5 rounded-lg border text-center transition-all ${bagSetup.clubs.includes(spec) ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'}`}
-                      >
-                        <span className="font-bold text-[10px] tracking-wide">{spec}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-
-              <div className="flex flex-col gap-2 bg-black/30 border border-white/5 rounded-xl p-3">
-                <div className="flex items-baseline justify-between pl-1">
-                  <span className="text-[9px] text-white/50 uppercase font-bold tracking-widest">Carry Yardages</span>
-                  <span className="text-[9px] text-emerald-400/70">Drives HUD club picks</span>
-                </div>
-                {bag.map((club, idx) => (
-                  <div key={club.label} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-1.5">
-                    <span className="text-xs font-bold text-white">{club.label}</span>
-                    {club.carry === 0 ? (
-                      <span className="text-[10px] text-white/40 uppercase tracking-wider">On green</span>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => setBag(b => b.map((c, i) => i === idx ? { ...c, carry: Math.max(5, c.carry - 5) } : c))} aria-label={`Decrease ${club.label} carry`} className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white/70 active:scale-90"><Minus size={12} /></button>
-                        <span className="w-12 text-center font-mono text-xs text-emerald-400">{club.carry}y</span>
-                        <button onClick={() => setBag(b => b.map((c, i) => i === idx ? { ...c, carry: Math.min(400, c.carry + 5) } : c))} aria-label={`Increase ${club.label} carry`} className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white/70 active:scale-90"><Plus size={12} /></button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="absolute bottom-6 left-5 right-5 z-20">
-          <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl p-1.5">
-            <button onClick={handleNext} className="w-full bg-emerald-500 text-white rounded-xl py-3 font-bold text-xs tracking-widest uppercase hover:bg-emerald-400 active:scale-[0.98] transition-all">
-              {bagStep === 3 ? 'Save Bag' : 'Next'}
+            <button onClick={startRound} className="w-full bg-emerald-500 text-white rounded-xl py-3.5 font-bold text-xs tracking-widest uppercase hover:bg-emerald-400 active:scale-[0.98] transition-all">
+              {resuming ? `Resume Round · Hole ${round.current + 1}` : 'Start Round'}
             </button>
           </div>
         </div>
@@ -566,22 +489,44 @@ export default function App() {
     .map(id => MOCK_DATA.friends.network.find(f => f.id === id))
     .filter((f): f is (typeof MOCK_DATA.friends.network)[number] => Boolean(f));
 
+  // --- Live round derivations (tee → yardages, length → hole range, format → scoring) ---
+  const roundHoles = holesFor(round.config.tee);
+  const range = holeRange(round.config.length);
+  const rangeIdx = Array.from({ length: range.end - range.start + 1 }, (_, k) => range.start + k);
+  const partner = hudBuddies[0];
+  const scoreRound = (excludeCurrent: boolean) => summarize({
+    format: round.config.format,
+    pars: rangeIdx.map(i => PARS[i]),
+    mine: rangeIdx.map(i => (excludeCurrent && i === round.current) || !round.shots[i].length ? null : round.shots[i].length),
+    partner: rangeIdx.map(i => (partner ? mockPartnerScore(partner.id, i + 1, PARS[i]) : null)),
+    partnerName: partner?.name.split(' ')[0],
+  });
+  // Buddies' running score over the holes you've finished (mock pace-matched sync).
+  const liveBuddies = hudBuddies.map(b => {
+    const d = rangeIdx
+      .filter(i => i !== round.current && round.shots[i].length)
+      .reduce((a, i) => a + mockPartnerScore(b.id, i + 1, PARS[i]) - PARS[i], 0);
+    return { ...b, liveScore: d === 0 ? 'E' : d > 0 ? `+${d}` : `${d}` };
+  });
+
   return (
     <div className="h-dvh w-full bg-black font-sans selection:bg-emerald-500/30 desktop:flex desktop:items-center desktop:justify-center desktop:bg-zinc-950 desktop:p-4">
       <div className="relative h-full w-full overflow-hidden bg-black desktop:aspect-[9/19.5] desktop:h-[min(860px,calc(100dvh-2rem))] desktop:w-auto desktop:rounded-[3rem] desktop:border-[8px] desktop:border-zinc-900 desktop:shadow-[0_0_50px_rgba(0,0,0,0.5)]">
         {currentView === 'hud' ? (
           <CaddieHud
-            hole={COURSE.holes[round.current]}
+            hole={roundHoles[round.current]}
+            tee={round.config.tee}
             strokes={round.shots[round.current].length}
-            roundToPar={totals(round.shots.map((h, i) => (i === round.current ? [] : h)), PARS).toPar}
-            isLastHole={round.current === HOLES - 1}
+            roundScore={scoreRound(true).headline}
+            format={round.config.format}
+            isLastHole={round.current === range.end}
             bag={bag}
             onLog={shot => dispatch({ type: 'log', shot })}
             onUndo={() => dispatch({ type: 'undo' })}
-            onNext={() => (round.current === HOLES - 1 ? setCurrentView('scorecard') : dispatch({ type: 'next' }))}
+            onNext={() => (round.current === range.end ? setCurrentView('scorecard') : dispatch({ type: 'next' }))}
             onScorecard={() => setCurrentView('scorecard')}
             onExit={() => setCurrentView('menu')}
-            buddies={hudBuddies}
+            buddies={liveBuddies}
             tournamentMode={courseSetup.tournamentMode}
           />
         ) : (
@@ -594,16 +539,18 @@ export default function App() {
               {currentView === 'menu' && ViewMenu()}
               {currentView === 'course' && ViewCourse()}
               {currentView === 'invite' && ViewInvite()}
-              {currentView === 'bag' && ViewBag()}
+              {currentView === 'bag' && <BagWizard bag={bag} setBag={setBag} onExit={() => setCurrentView('menu')} />}
               {currentView === 'friends' && ViewFriends()}
               {currentView === 'scorecard' && (
                 <Scorecard
                   round={round}
+                  holes={roundHoles}
+                  summary={scoreRound(false)}
                   onBack={() => setCurrentView('hud')}
                   onSelectHole={i => { dispatch({ type: 'goto', hole: i }); setCurrentView('hud'); }}
                   onNewRound={() => {
                     if (window.confirm('End this round and clear all scores?')) {
-                      dispatch({ type: 'reset' });
+                      dispatch({ type: 'start', config: round.config });
                       setCurrentView('menu');
                     }
                   }}

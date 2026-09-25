@@ -37,15 +37,30 @@ export function planLies(yards: number, holeNo: number): Lie[] {
   return lies;
 }
 
-export const COURSE = {
-  name: 'Somerby Golf Club',
-  holes: PARS.map<Hole>((par, i) => ({
-    number: i + 1,
-    par,
-    yards: YARDS[i],
-    bearingDeg: (i * 47 + 20) % 360,
-    lies: planLies(YARDS[i], i + 1),
-  })),
+export type TeeId = 'black' | 'blue' | 'white' | 'red';
+
+/** Yardage relative to the tips; rating/slope are mock values in the usual range for each set. */
+export const TEES: Record<TeeId, { label: string; factor: number; rating: number; slope: number }> = {
+  black: { label: 'Black', factor: 1, rating: 74.6, slope: 138 },
+  blue: { label: 'Blue', factor: 0.94, rating: 72.4, slope: 132 },
+  white: { label: 'White', factor: 0.87, rating: 70.1, slope: 126 },
+  red: { label: 'Red', factor: 0.76, rating: 67.8, slope: 118 },
 };
+export const TEE_IDS = Object.keys(TEES) as TeeId[];
+
+export const PAR_BY_HOLE = PARS;
+
+export function buildHoles(tee: TeeId): Hole[] {
+  const f = TEES[tee].factor;
+  return PARS.map((par, i) => {
+    const yards = Math.round(YARDS[i] * f);
+    return { number: i + 1, par, yards, bearingDeg: (i * 47 + 20) % 360, lies: planLies(yards, i + 1) };
+  });
+}
+
+const cache = new Map<TeeId, Hole[]>();
+export const holesFor = (tee: TeeId) => cache.get(tee) ?? (cache.set(tee, buildHoles(tee)), cache.get(tee)!);
+
+export const COURSE = { name: 'Somerby Golf Club', holes: holesFor('black') };
 
 export const lieFor = (hole: Hole, strokes: number) => hole.lies[Math.min(strokes, hole.lies.length - 1)];

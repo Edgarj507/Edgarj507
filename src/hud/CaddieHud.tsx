@@ -3,8 +3,8 @@ import { ArrowDown, ArrowUp, Aperture, Check, ChevronLeft, ChevronRight, Flag, M
 import { MapPlaceholder } from './MapPlaceholder';
 import { PuttView } from './PuttView';
 import { playsLike, recommendClub, windArrowDeg, type Club, type Conditions } from '../lib/caddie';
-import { lieFor, type Hole } from '../data/course';
-import { fmtToPar, type Shot } from '../lib/round';
+import { lieFor, type Hole, type TeeId } from '../data/course';
+import type { Format, Shot } from '../lib/round';
 
 // Mock weather feed (replace with weather API).
 const WEATHER = { tempF: 72, windMph: 12, windFromDeg: 225 };
@@ -13,9 +13,11 @@ export interface Buddy { id: string; name: string; liveScore: string }
 
 interface Props {
   hole: Hole;
+  tee: TeeId;
   strokes: number;
-  /** Round total vs par for holes played. */
-  roundToPar: number;
+  /** Format-aware running score for finished holes, e.g. "+2", "12 pts", "1 UP". */
+  roundScore: string;
+  format: Format;
   isLastHole: boolean;
   bag: Club[];
   onLog: (shot: Shot) => void;
@@ -27,11 +29,16 @@ interface Props {
   tournamentMode?: boolean;
 }
 
+const TEE_DOT: Record<TeeId, string> = { black: 'bg-zinc-900 ring-zinc-500', blue: 'bg-blue-600 ring-blue-300', white: 'bg-gray-100 ring-white', red: 'bg-red-600 ring-red-300' };
+const FORMAT_TAG: Record<Format, string> = {
+  'Stroke Play': 'Card', 'Match Play': 'Match', 'Stableford': 'Stbl', 'Scramble': 'Team', 'Best Ball': 'Team', 'Alt Shot': 'Team',
+};
+
 const glass = 'bg-black/40 backdrop-blur-xl backdrop-saturate-150 border border-white/10 shadow-lg';
 const scoreColor = (s: string) => (s.startsWith('-') ? 'text-red-400' : s === 'E' ? 'text-emerald-400' : 'text-white/90');
 
 export function CaddieHud({
-  hole, strokes, roundToPar, isLastHole, bag, onLog, onUndo, onNext, onScorecard, onExit, buddies = [], tournamentMode = false,
+  hole, tee, strokes, roundScore, format, isLastHole, bag, onLog, onUndo, onNext, onScorecard, onExit, buddies = [], tournamentMode = false,
 }: Props) {
   const [justLogged, setJustLogged] = useState(false);
   const [puttView, setPuttView] = useState(false);
@@ -87,6 +94,10 @@ export function CaddieHud({
             <div className="flex flex-col justify-between">
               <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/50">Hole</span>
               <span className="font-mono text-3xl font-semibold leading-none tabular-nums">{hole.number}</span>
+              <span className="mt-1 flex items-center gap-1 font-mono text-[10px] text-white/50">
+                <span className={`h-2 w-2 rounded-full ring-1 ${TEE_DOT[tee]}`} />
+                {hole.yards}y
+              </span>
             </div>
             <span className="w-px bg-white/15" />
             <dl className="flex flex-col justify-center gap-1 whitespace-nowrap text-[11px] font-semibold uppercase tracking-wider">
@@ -99,8 +110,8 @@ export function CaddieHud({
                 <dd className="font-mono tabular-nums">{strokes}</dd>
               </div>
               <div className="flex justify-between gap-3 text-[9px] text-white/40">
-                <dt>Card</dt>
-                <dd className="font-mono text-white/70">{fmtToPar(roundToPar)}</dd>
+                <dt>{FORMAT_TAG[format]}</dt>
+                <dd className="font-mono text-white/70">{roundScore}</dd>
               </div>
             </dl>
           </button>

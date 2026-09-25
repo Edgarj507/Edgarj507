@@ -3,7 +3,7 @@ import { createSecureStore } from './secureStore';
 import { isRoundState, newRound, roundReducer } from './round';
 import type { Club } from './caddie';
 
-const ROUND_KEY = 'eg.round.v2';
+const ROUND_KEY = 'eg.round.v3';
 const BAG_KEY = 'eg.bag.v1';
 
 const local = (() => {
@@ -19,7 +19,7 @@ const store = local ? createSecureStore(local) : null;
 
 /** 18-hole round state, persisted tamper-evident (score is the value worth protecting). */
 export function useRound() {
-  const [state, dispatch] = useReducer(roundReducer, undefined, newRound);
+  const [state, dispatch] = useReducer(roundReducer, undefined, () => newRound());
   const hydrated = useRef(!store);
 
   useEffect(() => {
