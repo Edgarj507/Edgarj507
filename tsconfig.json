@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
@@ -10,7 +14,18 @@
     "noUnusedParameters": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["vitest/globals"]
+    "types": [
+      "vitest/globals"
+    ],
+    "allowImportingTsExtensions": true
   },
-  "include": ["src", "vite.config.ts"]
+  "include": [
+    "src",
+    "vite.config.ts",
+    "scripts",
+    "supabase/functions/_shared",
+    "supabase/functions/submit-score/handler.ts",
+    "supabase/functions/submit-score/handler.test.ts",
+    "supabase/tests"
+  ]
 }

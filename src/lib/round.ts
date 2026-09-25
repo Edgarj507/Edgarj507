@@ -24,6 +24,8 @@ export interface RoundState {
   current: number;
   /** shots[holeIndex] for all 18 holes; holes outside the round's range stay empty. */
   shots: Shot[][];
+  /** Server round id once the round is synced to the cloud (signed-in users only). */
+  remoteId?: string;
 }
 
 export type RoundAction =
@@ -32,7 +34,8 @@ export type RoundAction =
   | { type: 'goto'; hole: number }
   | { type: 'next' }
   | { type: 'start'; config: RoundConfig }
-  | { type: 'hydrate'; state: RoundState };
+  | { type: 'hydrate'; state: RoundState }
+  | { type: 'attachRemote'; id: string };
 
 export const HOLES = 18;
 export const DEFAULT_CONFIG: RoundConfig = { tee: 'blue', format: 'Stroke Play', length: '18' };
@@ -59,6 +62,7 @@ export function isRoundState(x: unknown): x is RoundState {
   if (!r || r.v !== 3 || !r.config || !(FORMATS as readonly string[]).includes(r.config.format)) return false;
   if (!['black', 'blue', 'white', 'red'].includes(r.config.tee) || !['18', 'front', 'back'].includes(r.config.length)) return false;
   const { start, end } = holeRange(r.config.length);
+  if (r.remoteId !== undefined && typeof r.remoteId !== 'string') return false;
   return (
     Number.isInteger(r.current) && r.current >= start && r.current <= end &&
     Array.isArray(r.shots) && r.shots.length === HOLES && r.shots.every(Array.isArray)
@@ -85,6 +89,8 @@ export function roundReducer(s: RoundState, a: RoundAction): RoundState {
       return newRound(a.config);
     case 'hydrate':
       return a.state;
+    case 'attachRemote':
+      return { ...s, remoteId: a.id };
   }
 }
 

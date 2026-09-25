@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ArrowDown, ArrowUp, Aperture, Check, ChevronLeft, ChevronRight, Flag, Mountain, RotateCcw, Thermometer } from 'lucide-react';
+import { ArrowDown, ArrowUp, Aperture, Check, ChevronLeft, ChevronRight, Cloud, CloudOff, Flag, Mountain, RotateCcw, Thermometer } from 'lucide-react';
 import { MapPlaceholder } from './MapPlaceholder';
 import { PuttView } from './PuttView';
 import { playsLike, recommendClub, windArrowDeg, type Club, type Conditions } from '../lib/caddie';
 import { lieFor, type Hole, type TeeId } from '../data/course';
 import type { Format, Shot } from '../lib/round';
+import type { SyncStatus } from '../lib/sync';
 
 // Mock weather feed (replace with weather API).
 const WEATHER = { tempF: 72, windMph: 12, windFromDeg: 225 };
@@ -27,6 +28,7 @@ interface Props {
   onExit: () => void;
   buddies?: Buddy[];
   tournamentMode?: boolean;
+  sync?: SyncStatus;
 }
 
 const TEE_DOT: Record<TeeId, string> = { black: 'bg-zinc-900 ring-zinc-500', blue: 'bg-blue-600 ring-blue-300', white: 'bg-gray-100 ring-white', red: 'bg-red-600 ring-red-300' };
@@ -38,7 +40,7 @@ const glass = 'bg-black/40 backdrop-blur-xl backdrop-saturate-150 border border-
 const scoreColor = (s: string) => (s.startsWith('-') ? 'text-red-400' : s === 'E' ? 'text-emerald-400' : 'text-white/90');
 
 export function CaddieHud({
-  hole, tee, strokes, roundScore, format, isLastHole, bag, onLog, onUndo, onNext, onScorecard, onExit, buddies = [], tournamentMode = false,
+  hole, tee, strokes, roundScore, format, isLastHole, bag, onLog, onUndo, onNext, onScorecard, onExit, buddies = [], tournamentMode = false, sync = 'off',
 }: Props) {
   const [justLogged, setJustLogged] = useState(false);
   const [puttView, setPuttView] = useState(false);
@@ -110,7 +112,12 @@ export function CaddieHud({
                 <dd className="font-mono tabular-nums">{strokes}</dd>
               </div>
               <div className="flex justify-between gap-3 text-[9px] text-white/40">
-                <dt>{FORMAT_TAG[format]}</dt>
+                <dt className="flex items-center gap-1">
+                  {FORMAT_TAG[format]}
+                  {sync !== 'off' && (sync === 'error'
+                    ? <CloudOff size={9} className="text-amber-300" aria-label="Sync pending retry" />
+                    : <Cloud size={9} className={sync === 'pending' ? 'animate-pulse text-sky-300' : 'text-emerald-400'} aria-label={sync === 'pending' ? 'Syncing' : 'Synced'} />)}
+                </dt>
                 <dd className="font-mono text-white/70">{roundScore}</dd>
               </div>
             </dl>

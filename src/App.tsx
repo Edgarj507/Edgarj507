@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   ChevronLeft, Search, Check, Wind, Sun, Trophy, Users, MapPin,
   Target, ChevronRight, Briefcase, Share2, QrCode, UserPlus, ScanLine,
-  MessageCircle, AtSign, Link2
+  MessageCircle, AtSign, Link2, UserRound
 } from 'lucide-react';
 import { CaddieHud } from './hud/CaddieHud';
 import { MapPlaceholder } from './hud/MapPlaceholder';
@@ -12,6 +12,10 @@ import { COURSE, PAR_BY_HOLE as PARS, TEES, holesFor, type TeeId } from './data/
 import { FORMATS, hasStrokes, holeRange, sameConfig, type Format, type RoundConfig, type RoundLength } from './lib/round';
 import { mockPartnerScore, summarize } from './lib/scoring';
 import { useBag, useRound } from './lib/hooks';
+import { useAuth, type Visibility } from './auth/AuthContext';
+import { SignIn } from './views/SignIn';
+import { ProfileView, VisibilityPicker } from './views/Profile';
+import { completeRemoteRound, useRoundSync } from './lib/sync';
 
 const FORMAT_HELP: Record<Format, string> = {
   'Stroke Play': 'Every stroke counts. Total vs par.',
@@ -23,7 +27,7 @@ const FORMAT_HELP: Record<Format, string> = {
 };
 const NEEDS_PARTNER: Format[] = ['Match Play', 'Best Ball'];
 
-type View = 'menu' | 'course' | 'invite' | 'bag' | 'friends' | 'hud' | 'scorecard';
+type View = 'menu' | 'course' | 'invite' | 'bag' | 'friends' | 'hud' | 'scorecard' | 'profile';
 
 const MOCK_DATA = {
   friends: {
@@ -52,11 +56,18 @@ export default function App() {
     format: 'Stroke Play' as Format,
     length: '18' as RoundLength,
     tournamentMode: false,
+    visibility: null as Visibility | null, // null → profile default
     selectedFriends: [] as string[]
   });
+  const auth = useAuth();
+  const roundVisibility: Visibility = courseSetup.visibility ?? auth.profile.stats_visibility;
   const setupConfig: RoundConfig = { tee: courseSetup.tee, format: courseSetup.format, length: courseSetup.length };
 
   const [round, dispatch] = useRound();
+  const sync = useRoundSync(round, dispatch, {
+    userId: auth.status === 'signedIn' ? auth.user?.id ?? null : null,
+    visibility: roundVisibility,
+  });
   const { bag, gear, setGear, setCarry, resetCarry } = useBag();
 
   const startRound = () => {
@@ -111,7 +122,8 @@ export default function App() {
         {[
           { id: 'course', label: 'Select Course', icon: <MapPin size={14} /> },
           { id: 'bag', label: 'My Bag', icon: <Briefcase size={14} /> },
-          { id: 'friends', label: 'Friends', icon: <Users size={14} /> }
+          { id: 'friends', label: 'Friends', icon: <Users size={14} /> },
+          { id: 'profile', label: 'Profile & Privacy', icon: <UserRound size={14} /> }
         ].map(item => (
           <button
             key={item.id}
@@ -323,6 +335,12 @@ export default function App() {
             </p>
           </div>
 
+          <div className="flex flex-col gap-2">
+            <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">Who can see this round</span>
+            <VisibilityPicker label="Round visibility" value={roundVisibility} onChange={v => setCourseSetup({ ...courseSetup, visibility: v })} />
+            {auth.status !== 'signedIn' && <p className="px-1 text-[9px] text-white/40">Guest rounds stay on this device.</p>}
+          </div>
+
           <div className="flex items-center justify-between bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-4 mb-2">
             <div className="flex flex-col">
               <span className="text-[11px] font-bold text-white tracking-wide uppercase">Tournament Mode</span>
@@ -509,10 +527,22 @@ export default function App() {
     return { ...b, liveScore: d === 0 ? 'E' : d > 0 ? `+${d}` : `${d}` };
   });
 
+  const gated = auth.status === 'loading' || auth.status === 'signedOut';
+
   return (
     <div className="h-dvh w-full bg-black font-sans selection:bg-emerald-500/30 desktop:flex desktop:items-center desktop:justify-center desktop:bg-zinc-950 desktop:p-4">
       <div className="relative h-full w-full overflow-hidden bg-black desktop:aspect-[9/19.5] desktop:h-[min(860px,calc(100dvh-2rem))] desktop:w-auto desktop:rounded-[3rem] desktop:border-[8px] desktop:border-zinc-900 desktop:shadow-[0_0_50px_rgba(0,0,0,0.5)]">
-        {currentView === 'hud' ? (
+        {gated ? (
+          <>
+            <div className="absolute inset-0 z-0">
+              <MapPlaceholder />
+              <div className="absolute inset-0 bg-black/40" />
+            </div>
+            <div className="relative z-20 h-full w-full p-safe-inset">
+              {auth.status === 'signedOut' && <SignIn />}
+            </div>
+          </>
+        ) : currentView === 'hud' ? (
           <CaddieHud
             hole={roundHoles[round.current]}
             tee={round.config.tee}
@@ -523,7 +553,12 @@ export default function App() {
             bag={bag}
             onLog={shot => dispatch({ type: 'log', shot })}
             onUndo={() => dispatch({ type: 'undo' })}
-            onNext={() => (round.current === range.end ? setCurrentView('scorecard') : dispatch({ type: 'next' }))}
+            onNext={() => {
+              if (round.current !== range.end) return dispatch({ type: 'next' });
+              void sync.flush(round.current);
+              setCurrentView('scorecard');
+            }}
+            sync={sync.status}
             onScorecard={() => setCurrentView('scorecard')}
             onExit={() => setCurrentView('menu')}
             buddies={liveBuddies}
@@ -541,6 +576,7 @@ export default function App() {
               {currentView === 'invite' && ViewInvite()}
               {currentView === 'bag' && <BagWizard bag={bag} gear={gear} setGear={setGear} setCarry={setCarry} resetCarry={resetCarry} onExit={() => setCurrentView('menu')} />}
               {currentView === 'friends' && ViewFriends()}
+              {currentView === 'profile' && <ProfileView onBack={() => setCurrentView('menu')} />}
               {currentView === 'scorecard' && (
                 <Scorecard
                   round={round}
@@ -550,6 +586,7 @@ export default function App() {
                   onSelectHole={i => { dispatch({ type: 'goto', hole: i }); setCurrentView('hud'); }}
                   onNewRound={() => {
                     if (window.confirm('End this round and clear all scores?')) {
+                      if (round.remoteId) void completeRemoteRound(round.remoteId);
                       dispatch({ type: 'start', config: round.config });
                       setCurrentView('menu');
                     }
