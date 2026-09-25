@@ -17,9 +17,11 @@
     "types": [
       "vitest/globals"
     ],
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true
   },
   "include": [
+    "scripts/osm-course.test.ts",
     "src",
     "vite.config.ts",
     "scripts",

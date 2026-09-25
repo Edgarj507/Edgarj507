@@ -2,17 +2,17 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 import { ArrowDown, ArrowUp, Aperture, Check, ChevronLeft, BadgeCheck, ChevronRight, Cloud, CloudOff, Flag, Users, Mountain, RotateCcw, Thermometer } from 'lucide-react';
 import { MapPlaceholder } from './MapPlaceholder';
 import { imageryProvider } from '../map/providers';
-import { aimPosition, ballPosition, holeGeometry } from '../map/geometry';
+import { aimPosition, ballPosition, holeGeometry, shotBearing } from '../map/geometry';
 
 // MapLibre (~250 KB gz) loads only when the HUD opens.
 const SatelliteMap = lazy(() => import('../map/SatelliteMap'));
 const PROVIDER = imageryProvider();
 import { PuttView } from './PuttView';
 import { playsLike, recommendClub, windArrowDeg, type Club, type Conditions } from '../lib/caddie';
-import { lieFor, type Hole, type TeeId } from '../data/course';
+import { COURSE, lieFor, type Hole, type TeeId } from '../data/course';
 import { usePrefs } from '../i18n/prefs';
 import { usePinFeed } from '../lib/pinFeed';
-import { liveDistance } from '../../supabase/functions/_shared/pins.ts';
+import { bearingDeg, distanceM, liveDistance } from '../../supabase/functions/_shared/pins.ts';
 import type { Format, Shot } from '../lib/round';
 import type { SyncStatus } from '../lib/sync';
 
@@ -68,9 +68,16 @@ export function CaddieHud({
   const lie = lieFor(hole, strokes);
   const conditions: Conditions = { ...WEATHER, elevationDeltaYds: lie.elev };
 
+  // Real course geometry: ball sits on the mapped hole line, `lie.pin` yards from the green centre.
+  const [mapFailed, setMapFailed] = useState(!PROVIDER);
+  const geo = useMemo(() => holeGeometry(hole), [hole]);
+  const ball = useMemo(() => ballPosition(geo, lie.pin), [geo, lie.pin]);
+  // Line of play into the green (doglegs make this differ from the tee → green bearing).
+  const approachBearing = distanceM(ball, geo.green) > 1 ? bearingDeg(ball, geo.green) : hole.bearingDeg;
+
   // Static course data measures to the green centre; the community pin shifts it along/across
   // the line of play. When the shot is aimed at the flag, the aim line moves with it.
-  const pins = usePinFeed({ holeNo: hole.number, bearingDeg: hole.bearingDeg, enabled: communityPins, remoteRoundId });
+  const pins = usePinFeed({ holeNo: hole.number, bearingDeg: approachBearing, enabled: communityPins, remoteRoundId });
   const pinYds = Math.max(1, Math.round(liveDistance(lie.pin, pins.depthM * M_TO_YD, pins.lateralM * M_TO_YD)));
   const lineYds = lie.line === lie.pin ? pinYds : lie.line;
   const pinNote = (() => {
@@ -84,20 +91,18 @@ export function CaddieHud({
     return parts.length ? parts : [t('hud.centre')];
   })();
 
-  // Map geometry for the current lie: ball, aim point and live pin on real coordinates.
-  const [mapFailed, setMapFailed] = useState(!PROVIDER);
-  const geo = useMemo(() => holeGeometry(hole), [hole]);
-  const ball = useMemo(() => ballPosition(geo, lie.pin), [geo, lie.pin]);
   const pinLL = useMemo(() => (pins.live ? { lat: pins.live.lat, lng: pins.live.lng } : geo.green), [pins.live?.lat, pins.live?.lng, geo]);
-  const aim = useMemo(() => aimPosition(geo, ball, lineYds, pinLL), [geo, ball, lineYds, pinLL]);
+  const aim = useMemo(() => aimPosition(geo, lie.pin, lineYds, pinLL), [geo, lie.pin, lineYds, pinLL]);
+  // Direction of this shot drives the map rotation, wind components and the wind arrow.
+  const playBearing = distanceM(ball, aim) > 1 ? shotBearing(ball, aim) : approachBearing;
   const fmtMeters = useCallback((m: number) => `${d(m / 0.9144)}${u}`, [d, u]);
   const mapLabels = useMemo(() => ({ target: t('hud.target'), toPin: t('hud.toPin'), recenter: t('hud.recenter') }), [t]);
 
-  const calc = playsLike(lineYds, hole.bearingDeg, conditions);
+  const calc = playsLike(lineYds, playBearing, conditions);
   const target = tournamentMode ? lineYds : calc.yards;
   // Putter only once within 20y; otherwise recommend from full-swing clubs.
   const club = lie.pin <= 20 ? bag.find((c) => c.carry === 0) ?? recommendClub(target, bag) : recommendClub(target, bag.filter((c) => c.carry > 0));
-  const arrowDeg = windArrowDeg(WEATHER.windFromDeg, hole.bearingDeg);
+  const arrowDeg = windArrowDeg(WEATHER.windFromDeg, playBearing);
 
   const logShot = () => {
     if (justLogged || !club) return;
@@ -121,7 +126,7 @@ export function CaddieHud({
         <Suspense fallback={<MapPlaceholder />}>
           <SatelliteMap
             provider={PROVIDER}
-            bearing={geo.bearing}
+            bearing={playBearing}
             holeKey={hole.number}
             ball={ball}
             aim={aim}
@@ -308,7 +313,7 @@ export function CaddieHud({
             </div>
           </section>
           {!mapFailed && PROVIDER && (
-            <p className="pointer-events-none -mt-1 text-center text-[8px] leading-none text-white/35">{PROVIDER.attribution}</p>
+            <p className="pointer-events-none -mt-1 text-center text-[8px] leading-none text-white/35">{PROVIDER.attribution} · {COURSE.attribution}</p>
           )}
         </div>
       </div>

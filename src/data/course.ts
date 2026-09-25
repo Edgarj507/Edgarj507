@@ -10,15 +10,28 @@ export interface Lie {
 export interface Hole {
   number: number;
   par: number;
+  /** Yardage from the selected tee. */
   yards: number;
+  /** Overall tee → green bearing (degrees true). */
   bearingDeg: number;
+  /** Hole centre line from the back tee to the green centre, [lat, lng] (follows doglegs). */
+  path: [number, number][];
   /** Mock GPS feed: lie after N strokes. Past the end, the last lie repeats. */
   lies: Lie[];
 }
 
+import somerby from './courses/somerby.json';
+import { bearingDeg } from '../../supabase/functions/_shared/pins.ts';
+
+/**
+ * Somerby Golf Club, Byron, MN — hole geometry imported from OpenStreetMap
+ * (scripts/import-course-osm.mjs; © OpenStreetMap contributors, ODbL). Pars tagged in OSM are
+ * used as-is; the rest are estimated from length and corrected to the published par 72.
+ */
+const GEO = somerby.holes as { number: number; par: number; parSource: string; yards: number; path: [number, number][]; green: [number, number] }[];
 const MAX_LAYUP = 250;
-const PARS = [4, 5, 3, 4, 4, 3, 5, 4, 4, 4, 3, 5, 4, 4, 3, 4, 5, 4];
-const YARDS = [412, 538, 176, 395, 428, 158, 521, 367, 441, 404, 192, 547, 386, 419, 149, 433, 512, 455];
+const PARS = GEO.map((h) => h.par);
+const YARDS = GEO.map((h) => h.yards);
 
 /** Stock mock plan: lay up to MAX_LAYUP until in range, approach leaves ~8% of the distance, then short putts. */
 export function planLies(yards: number, holeNo: number): Lie[] {
@@ -39,7 +52,7 @@ export function planLies(yards: number, holeNo: number): Lie[] {
 
 export type TeeId = 'black' | 'blue' | 'white' | 'red';
 
-/** Yardage relative to the tips; rating/slope are mock values in the usual range for each set. */
+/** Yardage relative to the back tees; rating/slope are placeholders until the official card is loaded. */
 export const TEES: Record<TeeId, { label: string; factor: number; rating: number; slope: number }> = {
   black: { label: 'Black', factor: 1, rating: 74.6, slope: 138 },
   blue: { label: 'Blue', factor: 0.94, rating: 72.4, slope: 132 },
@@ -54,16 +67,31 @@ export function buildHoles(tee: TeeId): Hole[] {
   const f = TEES[tee].factor;
   return PARS.map((par, i) => {
     const yards = Math.round(YARDS[i] * f);
-    return { number: i + 1, par, yards, bearingDeg: (i * 47 + 20) % 360, lies: planLies(yards, i + 1) };
+    const path = GEO[i].path;
+    const [tLat, tLng] = path[0];
+    const [gLat, gLng] = GEO[i].green;
+    return {
+      number: i + 1, par, yards, path,
+      bearingDeg: bearingDeg({ lat: tLat, lng: tLng }, { lat: gLat, lng: gLng }),
+      lies: planLies(yards, i + 1),
+    };
   });
 }
 
 const cache = new Map<TeeId, Hole[]>();
 export const holesFor = (tee: TeeId) => cache.get(tee) ?? (cache.set(tee, buildHoles(tee)), cache.get(tee)!);
 
-export const COURSE = { name: 'Somerby Golf Club', holes: holesFor('black') };
+export const COURSE = {
+  name: somerby.name,
+  location: 'Byron, MN',
+  attribution: `Course data ${somerby.attribution}`,
+  holes: holesFor('black'),
+};
 
 export const lieFor = (hole: Hole, strokes: number) => hole.lies[Math.min(strokes, hole.lies.length - 1)];
 
-/** Green centre coordinates (mock survey data; same formula seeds course_greens in SQL). */
-export const greenCenter = (holeNo: number) => ({ lat: 52.7 + holeNo * 0.0035, lng: -0.85 + ((holeNo % 3) - 1) * 0.002 });
+/** Green centre (centroid of the mapped green); also seeded into course_greens in SQL. */
+export const greenCenter = (holeNo: number) => {
+  const [lat, lng] = GEO[holeNo - 1].green;
+  return { lat, lng };
+};

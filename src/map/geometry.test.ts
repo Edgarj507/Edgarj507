@@ -1,26 +1,33 @@
-import { holeGeometry, ballPosition, aimPosition } from './geometry';
+import { aimPosition, ballPosition, holeGeometry, pointFromGreen, shotBearing } from './geometry';
 import { imageryProvider } from './providers';
-import { COURSE, greenCenter } from '../data/course';
+import { COURSE, greenCenter, holesFor } from '../data/course';
 import { distanceM } from '../../supabase/functions/_shared/pins.ts';
 
-const hole = COURSE.holes[0];
-
-describe('hole geometry', () => {
-  it('tee is the hole length back from the surveyed green, bearing points at the green', () => {
+describe('real hole geometry (Somerby, OSM)', () => {
+  it('uses the mapped green and a tee the hole length back along the (dogleg) line', () => {
+    const hole = COURSE.holes[0];
     const g = holeGeometry(hole);
     expect(g.green).toEqual(greenCenter(1));
     expect(g.lengthM).toBeCloseTo(hole.yards * 0.9144, 0);
-    expect(Math.abs(((g.bearing - hole.bearingDeg + 540) % 360) - 180)).toBeLessThan(0.5);
+    const along = g.path.slice(1).reduce((s, p, i) => s + distanceM(g.path[i], p), 0);
+    expect(along).toBeCloseTo(g.lengthM, 0);
+    expect(hole.path.length).toBeGreaterThan(2); // hole 1 is a dogleg in OSM
   });
-  it('ball sits pinYds short of the green; aim is layup or pin', () => {
-    const g = holeGeometry(hole);
-    const ball = ballPosition(g, 164);
-    expect(distanceM(ball, g.green)).toBeCloseTo(164 * 0.9144, 0);
-    expect(ballPosition(g, 9999)).toEqual(expect.objectContaining({ lat: expect.closeTo(g.tee.lat, 6) }));
-    const pin = g.green;
-    expect(aimPosition(g, ball, 164, pin)).toBe(pin);
-    const layup = aimPosition(g, ballPosition(g, 412), 250, pin);
-    expect(distanceM(ballPosition(g, 412), layup)).toBeCloseTo(250 * 0.9144, 0);
+
+  it('forward tees start further up the same line', () => {
+    const back = holeGeometry(holesFor('black')[0]);
+    const red = holeGeometry(holesFor('red')[0]);
+    expect(red.lengthM).toBeLessThan(back.lengthM);
+    expect(distanceM(red.tee, pointFromGreen(back.path, red.lengthM))).toBeLessThan(1);
+  });
+
+  it('ball and aim follow the lie', () => {
+    const g = holeGeometry(COURSE.holes[0]);
+    const ball = ballPosition(g, 300);
+    const layup = aimPosition(g, 300, 250, g.green);
+    expect(distanceM(layup, g.green)).toBeLessThan(50 * 0.9144 + 5);
+    expect(aimPosition(g, 150, 150, g.green)).toBe(g.green);
+    expect(shotBearing(ball, layup)).toBeGreaterThanOrEqual(0);
   });
 });
 

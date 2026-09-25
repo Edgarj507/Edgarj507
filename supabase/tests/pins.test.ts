@@ -1,12 +1,13 @@
 import { as, createDb, signUp, type Db } from './harness';
 import { consensus, distanceM, offsetPoint } from '../functions/_shared/pins.ts';
+import { greenCenter } from '../../src/data/course';
 
 const A = '00000000-0000-4000-8000-0000000000a1';
 const B = '00000000-0000-4000-8000-0000000000b1';
 const C = '00000000-0000-4000-8000-0000000000c1';
 const X = '00000000-0000-4000-8000-0000000000e1'; // not in the round
 const PARS = '{4,5,3,4,4,3,5,4,4,4,3,5,4,4,3,4,5,4}';
-const GREEN7 = { lat: 52.70 + 7 * 0.0035, lng: -0.85 + ((7 % 3) - 1) * 0.002 };
+const GREEN7 = greenCenter(7); // real OSM green; migrations seed the same coordinates
 const CUP = offsetPoint(GREEN7, 200, 4);
 
 let db: Db;
@@ -30,6 +31,14 @@ beforeAll(async () => {
       `insert into public.rounds (owner_id, course_name, tee, format, length, pars) values ($1, 'Somerby Golf Club', 'blue', 'Stroke Play', '18', $2) returning id`, [A, PARS]);
     for (const u of [A, B, C]) await db.query(`insert into public.round_players (round_id, user_id) values ($1, $2)`, [rows[0].id, u]);
     return rows[0].id;
+  });
+});
+
+describe('course greens', () => {
+  it('database greens match the app course data', async () => {
+    const { rows } = await db.query<{ hole: number; lat: number; lng: number }>(`select hole, lat, lng from public.course_greens where course_name = 'Somerby Golf Club' order by hole`);
+    expect(rows).toHaveLength(18);
+    for (const r of rows) expect(distanceM(r, greenCenter(r.hole))).toBeLessThan(0.01);
   });
 });
 

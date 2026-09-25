@@ -38,9 +38,10 @@ describe('totals', () => {
   it('counts only played holes toward par', () => {
     const pars = COURSE.holes.map((h) => h.par);
     const shots = newRound().shots;
-    shots[0] = [shot, shot, shot, shot, shot]; // par 4 → +1
-    shots[2] = [shot, shot]; // par 3 → -1
-    expect(totals(shots, pars)).toEqual({ strokes: 7, parPlayed: 7, toPar: 0, thru: 2 });
+    shots[0] = Array(pars[0] + 1).fill(shot); // bogey
+    shots[2] = Array(pars[2] - 1).fill(shot); // birdie
+    const parPlayed = pars[0] + pars[2];
+    expect(totals(shots, pars)).toEqual({ strokes: parPlayed, parPlayed, toPar: 0, thru: 2 });
     expect(fmtToPar(1)).toBe('+1');
     expect(fmtToPar(0)).toBe('E');
   });
