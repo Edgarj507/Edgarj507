@@ -444,6 +444,14 @@
     </div>
 
     <script>
+    // Everything below runs inside a single closure instead of the classic-
+    // script global scope, so score/lives/level and every function here are
+    // invisible to the page's global object - opening devtools and typing
+    // `score = 999999` or `resumeAfterContinue()` no longer resolves to
+    // anything. This doesn't stop a debugger set inside the closure, but it
+    // closes off the "type it into the console" tamper path most players
+    // would actually try.
+    (function () {
         const canvas = document.getElementById('tetris');
         const context = canvas.getContext('2d');
         const previewCanvas = document.getElementById('preview');
@@ -1381,12 +1389,52 @@
             const plugin = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.GameCenter;
             if (plugin) plugin.signIn().catch(e => console.warn('Game Center sign-in skipped:', e));
         }
+        // The true ceiling a perfect player could reach for a given number of
+        // cleared lines. Score only ever grows from line clears (see
+        // boardSweep), so no legitimate run can exceed this for its lines
+        // count; this is what actually blocks a console-edited `score`
+        // before it reaches the shared leaderboard, not just the closure
+        // scoping above (which only stops a value from being *set* that way -
+        // this stops a set value from being *trusted*).
+        //
+        // Naively assuming "always clear 4 at once" undercounts the real
+        // ceiling: boardSweep() prices each clear at the level held *before*
+        // that clear, so a 4-clear that straddles a level-up (e.g. cumulative
+        // lines 8->12) prices all 4 lines at the lower level, while landing
+        // exactly on the boundary with a smaller clear first can push a
+        // later 4-clear into the higher-priced level instead - order and
+        // clear-size choice both matter. This is a straightforward DP over
+        // cumulative lines cleared (0..totalLines): level at a given
+        // cumulative count is a pure function of that count, so dp[n] = the
+        // best score reachable after n lines is just the best of trying each
+        // possible next clear size (1-4) from every smaller n it could have
+        // come from.
+        function maxPossibleScore(totalLines) {
+            const SANE_LINES_CAP = 100000; // generous; guards a huge tampered `lines` value, not real play
+            if (totalLines > SANE_LINES_CAP) return -1;
+            const lineScores = [0, 40, 100, 300, 1200];
+            const levelAt = n => Math.min(100, Math.floor(n / 10) + 1);
+            const dp = new Float64Array(totalLines + 1);
+            for (let n = 1; n <= totalLines; n++) {
+                let best = -Infinity;
+                for (let c = 1; c <= Math.min(4, n); c++) {
+                    const candidate = dp[n - c] + lineScores[c] * levelAt(n - c);
+                    if (candidate > best) best = candidate;
+                }
+                dp[n] = best;
+            }
+            return dp[totalLines];
+        }
         function gameCenterSubmitScore(finalScore) {
             const plugin = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.GameCenter;
-            if (plugin) {
-                plugin.submitScore({ leaderboardId: 'com.edgarj507.kaijublocks.highscores', score: finalScore })
-                    .catch(e => console.warn('Game Center score submit failed:', e));
+            if (!plugin) return;
+            const ceiling = maxPossibleScore(lines);
+            if (finalScore > ceiling) {
+                console.warn(`Game Center submission blocked: score ${finalScore} exceeds the max possible (${ceiling}) for ${lines} lines cleared.`);
+                return;
             }
+            plugin.submitScore({ leaderboardId: 'com.edgarj507.kaijublocks.highscores', score: finalScore })
+                .catch(e => console.warn('Game Center score submit failed:', e));
         }
 
         // --- Custom audio overrides -----------------------------------------
@@ -1696,7 +1744,7 @@
 
         setInterval(createFlyingSaucer, 45000);
         setTimeout(() => { createKaiju(); scheduleKaiju(); }, 12000);
-
+    })();
     </script>
 </body>
 </html>
