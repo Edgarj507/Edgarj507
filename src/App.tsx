@@ -5,6 +5,7 @@ import {
   MessageCircle, AtSign, Link2
 } from 'lucide-react';
 import { CaddieHud } from './hud/CaddieHud';
+import { MapPlaceholder } from './hud/MapPlaceholder';
 
 type View = 'menu' | 'course' | 'invite' | 'bag' | 'friends' | 'hud';
 type BagKey = 'brands' | 'models' | 'clubs';
@@ -548,12 +549,8 @@ export default function App() {
         ) : (
           <>
             <div className="absolute inset-0 z-0">
-              <img
-                src="https://images.unsplash.com/photo-1593111774240-d529f12bc416?auto=format&fit=crop&q=80&w=1000"
-                alt=""
-                className="h-full w-full scale-105 object-cover object-center opacity-40 pointer-events-none"
-              />
-              <div className="absolute inset-0 bg-black/60 backdrop-blur-md" />
+              <MapPlaceholder />
+              <div className="absolute inset-0 bg-black/50 backdrop-blur-md" />
             </div>
             <div className="relative z-20 h-full w-full p-safe-inset">
               {currentView === 'menu' && ViewMenu()}
