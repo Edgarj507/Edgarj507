@@ -248,6 +248,20 @@
             accent-color: #0DFF72;
             cursor: pointer;
         }
+        /* System font, not the pixel font above - 'Press Start 2P' has no
+           CJK/Cyrillic glyphs, so language names in those scripts would
+           fall back awkwardly mid-word if left in that font. */
+        #languageSelect {
+            width: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 0.95em;
+            background-color: var(--button-bg);
+            color: var(--text-color);
+            border: 2px solid var(--button-border);
+            border-radius: 6px;
+            padding: 8px 10px;
+            cursor: pointer;
+        }
         #crt {
             position: fixed;
             inset: 0;
@@ -387,21 +401,21 @@
                     <button class="control-btn down">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>
                     </button>
-                    <button class="control-btn drop">DROP</button>
+                    <button id="dropButton" class="control-btn drop">DROP</button>
                     <button id="pauseButton" class="control-btn pause">PAUSE</button>
                 </div>
             </div>
              <div class="sidebar">
-                <div class="info-box"><h2>SCORE</h2><p id="score">0</p></div>
-                <div class="info-box"><h2>LINES</h2><p id="lines">0</p></div>
-                <div class="info-box"><h2>LEVEL</h2><p id="level">1</p></div>
-                <div class="info-box"><h2>LIVES</h2><p id="livesDisplay">4</p></div>
-                <div class="preview-box"><h2>NEXT</h2><canvas id="preview" width="120" height="120"></canvas></div>
+                <div class="info-box"><h2 id="scoreLabel">SCORE</h2><p id="score">0</p></div>
+                <div class="info-box"><h2 id="linesLabel">LINES</h2><p id="lines">0</p></div>
+                <div class="info-box"><h2 id="levelLabel">LEVEL</h2><p id="level">1</p></div>
+                <div class="info-box"><h2 id="livesLabel">LIVES</h2><p id="livesDisplay">4</p></div>
+                <div class="preview-box"><h2 id="nextLabel">NEXT</h2><canvas id="preview" width="120" height="120"></canvas></div>
             </div>
         </div>
         <div id="pauseOverlay" class="pause-overlay">
             <div class="pause-overlay-content">
-                <p>PAUSED</p>
+                <p id="pausedLabel">PAUSED</p>
                 <button id="resumeButton" class="resume-button">Resume</button>
             </div>
         </div>
@@ -411,12 +425,16 @@
 
     <div id="settingsModal" class="modal" style="position:fixed">
         <div class="modal-content settings-content">
-            <h2>SETTINGS</h2>
+            <h2 id="settingsTitle">SETTINGS</h2>
             <button id="musicToggle" class="audio-toggle">&#9834; MUSIC: OFF</button>
             <button id="fxToggle" class="audio-toggle on">&#128266; FX: ON</button>
             <div class="volume-row">
-                <label for="volumeSlider">VOLUME <span id="volumeValue">100%</span></label>
+                <label for="volumeSlider"><span id="volumeLabel">VOLUME</span> <span id="volumeValue">100%</span></label>
                 <input type="range" id="volumeSlider" min="0" max="100" value="100">
+            </div>
+            <div class="volume-row">
+                <label for="languageSelect"><span id="languageLabel">LANGUAGE</span></label>
+                <select id="languageSelect"></select>
             </div>
             <button id="closeSettingsButton">CLOSE</button>
         </div>
@@ -424,8 +442,8 @@
 
     <div id="gameOverModal" class="modal" style="position:fixed">
         <div class="modal-content">
-            <h2>GAME OVER</h2>
-            <p>Your score: <span id="finalScore">0</span></p>
+            <h2 id="gameOverTitle">GAME OVER</h2>
+            <p id="finalScoreText">Your score: 0</p>
             <p id="continueError" style="display:none; color:#f78166; font-size:0.7em;"></p>
             <button id="continueButton">Continue</button>
             <button id="restartButton">Play Again</button>
@@ -456,6 +474,211 @@
             gameCenter: window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.GameCenter,
             haptics: window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.Haptics
         });
+
+        // --- Localization ------------------------------------------------
+        // Every user-facing UI string lives here, keyed by language then by
+        // string key. City names and the credit line are deliberately left
+        // untranslated (place names/attribution). {placeholders} are filled
+        // by t() below.
+        const LANGUAGE_NAMES = {
+            en: 'English', es: 'Español', fr: 'Français', de: 'Deutsch',
+            pt: 'Português', it: 'Italiano', ja: '日本語', ko: '한국어',
+            zh: '中文', ru: 'Русский'
+        };
+        const TRANSLATIONS = {
+            en: {
+                settings: 'SETTINGS', musicOn: 'MUSIC: ON', musicOff: 'MUSIC: OFF',
+                fxOn: 'FX: ON', fxOff: 'FX: OFF', volume: 'VOLUME', language: 'LANGUAGE',
+                autoLanguage: 'Auto (Device)', close: 'CLOSE', score: 'SCORE', lines: 'LINES',
+                level: 'LEVEL', lives: 'LIVES', next: 'NEXT', overlayPaused: 'PAUSED',
+                overlayResume: 'Resume', pauseBtnPause: 'PAUSE', pauseBtnResume: 'RESUME',
+                drop: 'DROP', gameOver: 'GAME OVER', yourScore: 'Your score: {score}',
+                playAgain: 'Play Again', continueWithLives: 'CONTINUE ({lives} LEFT)',
+                continueWithPrice: 'CONTINUE — {price}', processing: 'PROCESSING…',
+                purchaseCancelled: 'Purchase cancelled.', purchaseFailed: 'Purchase failed. Try again.',
+                browserOnly: 'Purchases are only available in the App Store version.'
+            },
+            es: {
+                settings: 'AJUSTES', musicOn: 'MÚSICA: ACTIVADA', musicOff: 'MÚSICA: DESACTIVADA',
+                fxOn: 'SONIDO: ACTIVADO', fxOff: 'SONIDO: DESACTIVADO', volume: 'VOLUMEN', language: 'IDIOMA',
+                autoLanguage: 'Automático (Dispositivo)', close: 'CERRAR', score: 'PUNTOS', lines: 'LÍNEAS',
+                level: 'NIVEL', lives: 'VIDAS', next: 'SIGUIENTE', overlayPaused: 'PAUSA',
+                overlayResume: 'Reanudar', pauseBtnPause: 'PAUSA', pauseBtnResume: 'REANUDAR',
+                drop: 'SOLTAR', gameOver: 'FIN DEL JUEGO', yourScore: 'Tu puntuación: {score}',
+                playAgain: 'Jugar de Nuevo', continueWithLives: 'CONTINUAR ({lives} RESTANTES)',
+                continueWithPrice: 'CONTINUAR — {price}', processing: 'PROCESANDO…',
+                purchaseCancelled: 'Compra cancelada.', purchaseFailed: 'Compra fallida. Inténtalo de nuevo.',
+                browserOnly: 'Las compras solo están disponibles en la versión de App Store.'
+            },
+            fr: {
+                settings: 'PARAMÈTRES', musicOn: 'MUSIQUE : ACTIVÉE', musicOff: 'MUSIQUE : DÉSACTIVÉE',
+                fxOn: 'SON : ACTIVÉ', fxOff: 'SON : DÉSACTIVÉ', volume: 'VOLUME', language: 'LANGUE',
+                autoLanguage: 'Automatique (Appareil)', close: 'FERMER', score: 'SCORE', lines: 'LIGNES',
+                level: 'NIVEAU', lives: 'VIES', next: 'SUIVANT', overlayPaused: 'PAUSE',
+                overlayResume: 'Reprendre', pauseBtnPause: 'PAUSE', pauseBtnResume: 'REPRENDRE',
+                drop: 'CHUTE', gameOver: 'PARTIE TERMINÉE', yourScore: 'Votre score : {score}',
+                playAgain: 'Rejouer', continueWithLives: 'CONTINUER ({lives} RESTANTES)',
+                continueWithPrice: 'CONTINUER — {price}', processing: 'TRAITEMENT…',
+                purchaseCancelled: 'Achat annulé.', purchaseFailed: "Échec de l'achat. Réessayez.",
+                browserOnly: "Les achats ne sont disponibles que dans la version App Store."
+            },
+            de: {
+                settings: 'EINSTELLUNGEN', musicOn: 'MUSIK: AN', musicOff: 'MUSIK: AUS',
+                fxOn: 'SOUND: AN', fxOff: 'SOUND: AUS', volume: 'LAUTSTÄRKE', language: 'SPRACHE',
+                autoLanguage: 'Automatisch (Gerät)', close: 'SCHLIESSEN', score: 'PUNKTE', lines: 'LINIEN',
+                level: 'LEVEL', lives: 'LEBEN', next: 'NÄCHSTES', overlayPaused: 'PAUSE',
+                overlayResume: 'Fortsetzen', pauseBtnPause: 'PAUSE', pauseBtnResume: 'WEITER',
+                drop: 'FALLEN', gameOver: 'SPIEL VORBEI', yourScore: 'Deine Punktzahl: {score}',
+                playAgain: 'Nochmal Spielen', continueWithLives: 'WEITER ({lives} ÜBRIG)',
+                continueWithPrice: 'WEITER — {price}', processing: 'WIRD VERARBEITET…',
+                purchaseCancelled: 'Kauf abgebrochen.', purchaseFailed: 'Kauf fehlgeschlagen. Erneut versuchen.',
+                browserOnly: 'Käufe sind nur in der App-Store-Version möglich.'
+            },
+            pt: {
+                settings: 'CONFIGURAÇÕES', musicOn: 'MÚSICA: LIGADA', musicOff: 'MÚSICA: DESLIGADA',
+                fxOn: 'SOM: LIGADO', fxOff: 'SOM: DESLIGADO', volume: 'VOLUME', language: 'IDIOMA',
+                autoLanguage: 'Automático (Dispositivo)', close: 'FECHAR', score: 'PONTOS', lines: 'LINHAS',
+                level: 'NÍVEL', lives: 'VIDAS', next: 'PRÓXIMO', overlayPaused: 'PAUSADO',
+                overlayResume: 'Continuar', pauseBtnPause: 'PAUSA', pauseBtnResume: 'CONTINUAR',
+                drop: 'SOLTAR', gameOver: 'FIM DE JOGO', yourScore: 'Sua pontuação: {score}',
+                playAgain: 'Jogar Novamente', continueWithLives: 'CONTINUAR ({lives} RESTANTES)',
+                continueWithPrice: 'CONTINUAR — {price}', processing: 'PROCESSANDO…',
+                purchaseCancelled: 'Compra cancelada.', purchaseFailed: 'Falha na compra. Tente novamente.',
+                browserOnly: 'Compras disponíveis apenas na versão da App Store.'
+            },
+            it: {
+                settings: 'IMPOSTAZIONI', musicOn: 'MUSICA: ATTIVA', musicOff: 'MUSICA: DISATTIVA',
+                fxOn: 'AUDIO: ATTIVO', fxOff: 'AUDIO: DISATTIVO', volume: 'VOLUME', language: 'LINGUA',
+                autoLanguage: 'Automatico (Dispositivo)', close: 'CHIUDI', score: 'PUNTEGGIO', lines: 'LINEE',
+                level: 'LIVELLO', lives: 'VITE', next: 'PROSSIMO', overlayPaused: 'PAUSA',
+                overlayResume: 'Riprendi', pauseBtnPause: 'PAUSA', pauseBtnResume: 'RIPRENDI',
+                drop: 'LASCIA CADERE', gameOver: 'GAME OVER', yourScore: 'Il tuo punteggio: {score}',
+                playAgain: 'Gioca Ancora', continueWithLives: 'CONTINUA ({lives} RIMASTE)',
+                continueWithPrice: 'CONTINUA — {price}', processing: 'ELABORAZIONE…',
+                purchaseCancelled: 'Acquisto annullato.', purchaseFailed: 'Acquisto non riuscito. Riprova.',
+                browserOnly: "Gli acquisti sono disponibili solo nella versione App Store."
+            },
+            ja: {
+                settings: '設定', musicOn: '音楽：オン', musicOff: '音楽：オフ',
+                fxOn: '効果音：オン', fxOff: '効果音：オフ', volume: '音量', language: '言語',
+                autoLanguage: '自動（端末設定）', close: '閉じる', score: 'スコア', lines: 'ライン',
+                level: 'レベル', lives: 'ライフ', next: 'ネクスト', overlayPaused: '一時停止',
+                overlayResume: '再開', pauseBtnPause: 'ポーズ', pauseBtnResume: '再開',
+                drop: 'ドロップ', gameOver: 'ゲームオーバー', yourScore: 'スコア：{score}',
+                playAgain: 'もう一度プレイ', continueWithLives: 'コンティニュー（残り{lives}）',
+                continueWithPrice: 'コンティニュー — {price}', processing: '処理中…',
+                purchaseCancelled: '購入がキャンセルされました。', purchaseFailed: '購入に失敗しました。もう一度お試しください。',
+                browserOnly: '購入はApp Store版でのみご利用いただけます。'
+            },
+            ko: {
+                settings: '설정', musicOn: '음악: 켜짐', musicOff: '음악: 꺼짐',
+                fxOn: '효과음: 켜짐', fxOff: '효과음: 꺼짐', volume: '볼륨', language: '언어',
+                autoLanguage: '자동 (기기 설정)', close: '닫기', score: '점수', lines: '라인',
+                level: '레벨', lives: '목숨', next: '다음', overlayPaused: '일시정지',
+                overlayResume: '계속하기', pauseBtnPause: '일시정지', pauseBtnResume: '계속',
+                drop: '드롭', gameOver: '게임 오버', yourScore: '점수: {score}',
+                playAgain: '다시 하기', continueWithLives: '계속하기 ({lives}개 남음)',
+                continueWithPrice: '계속하기 — {price}', processing: '처리 중…',
+                purchaseCancelled: '구매가 취소되었습니다.', purchaseFailed: '구매에 실패했습니다. 다시 시도해 주세요.',
+                browserOnly: '구매는 App Store 버전에서만 가능합니다.'
+            },
+            zh: {
+                settings: '设置', musicOn: '音乐：开', musicOff: '音乐：关',
+                fxOn: '音效：开', fxOff: '音效：关', volume: '音量', language: '语言',
+                autoLanguage: '自动（设备设置）', close: '关闭', score: '分数', lines: '行数',
+                level: '等级', lives: '生命', next: '下一个', overlayPaused: '已暂停',
+                overlayResume: '继续', pauseBtnPause: '暂停', pauseBtnResume: '继续',
+                drop: '下落', gameOver: '游戏结束', yourScore: '你的分数：{score}',
+                playAgain: '再玩一次', continueWithLives: '继续（剩余{lives}次）',
+                continueWithPrice: '继续 — {price}', processing: '处理中…',
+                purchaseCancelled: '购买已取消。', purchaseFailed: '购买失败，请重试。',
+                browserOnly: '购买仅在App Store版本中可用。'
+            },
+            ru: {
+                settings: 'НАСТРОЙКИ', musicOn: 'МУЗЫКА: ВКЛ', musicOff: 'МУЗЫКА: ВЫКЛ',
+                fxOn: 'ЗВУК: ВКЛ', fxOff: 'ЗВУК: ВЫКЛ', volume: 'ГРОМКОСТЬ', language: 'ЯЗЫК',
+                autoLanguage: 'Авто (Устройство)', close: 'ЗАКРЫТЬ', score: 'СЧЁТ', lines: 'ЛИНИИ',
+                level: 'УРОВЕНЬ', lives: 'ЖИЗНИ', next: 'ДАЛЕЕ', overlayPaused: 'ПАУЗА',
+                overlayResume: 'Продолжить', pauseBtnPause: 'ПАУЗА', pauseBtnResume: 'ПРОДОЛЖИТЬ',
+                drop: 'СБРОС', gameOver: 'ИГРА ОКОНЧЕНА', yourScore: 'Ваш счёт: {score}',
+                playAgain: 'Играть Снова', continueWithLives: 'ПРОДОЛЖИТЬ (ОСТАЛОСЬ {lives})',
+                continueWithPrice: 'ПРОДОЛЖИТЬ — {price}', processing: 'ОБРАБОТКА…',
+                purchaseCancelled: 'Покупка отменена.', purchaseFailed: 'Покупка не удалась. Попробуйте снова.',
+                browserOnly: 'Покупки доступны только в версии App Store.'
+            }
+        };
+        const SUPPORTED_LANGUAGES = Object.keys(TRANSLATIONS);
+        let languagePref = 'auto'; // 'auto', or an explicit code from SUPPORTED_LANGUAGES
+        let activeLanguage = 'en'; // resolved language actually in use right now
+
+        function detectDeviceLanguage() {
+            const langs = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || 'en'];
+            for (const l of langs) {
+                const code = String(l).toLowerCase().split('-')[0];
+                if (SUPPORTED_LANGUAGES.includes(code)) return code;
+            }
+            return 'en';
+        }
+        function resolveActiveLanguage() {
+            return languagePref === 'auto' ? detectDeviceLanguage() : languagePref;
+        }
+        function t(key, vars) {
+            const dict = TRANSLATIONS[activeLanguage] || TRANSLATIONS.en;
+            let str = dict[key] ?? TRANSLATIONS.en[key] ?? key;
+            if (vars) str = str.replace(/\{(\w+)\}/g, (_, k) => (vars[k] !== undefined ? vars[k] : ''));
+            return str;
+        }
+        function populateLanguageSelect() {
+            languageSelect.innerHTML = '';
+            const autoOpt = document.createElement('option');
+            autoOpt.value = 'auto';
+            autoOpt.textContent = t('autoLanguage');
+            languageSelect.appendChild(autoOpt);
+            SUPPORTED_LANGUAGES.forEach(code => {
+                const opt = document.createElement('option');
+                opt.value = code;
+                opt.textContent = LANGUAGE_NAMES[code] || code;
+                languageSelect.appendChild(opt);
+            });
+            languageSelect.value = languagePref;
+        }
+        // Re-renders every static UI string in the newly active language, plus
+        // whatever dynamic text is currently showing (pause state, fx/music
+        // toggle state, and - if the game-over modal happens to be open while
+        // the player is in Settings - the continue button/error and final
+        // score line). Called at startup and every time the language changes.
+        function applyTranslations() {
+            activeLanguage = resolveActiveLanguage();
+            document.documentElement.lang = activeLanguage;
+
+            settingsButton.textContent = '⚙ ' + t('settings');
+            settingsTitleEl.textContent = t('settings');
+            volumeLabelEl.textContent = t('volume');
+            languageLabelEl.textContent = t('language');
+            closeSettingsButton.textContent = t('close');
+            scoreLabelEl.textContent = t('score');
+            linesLabelEl.textContent = t('lines');
+            levelLabelEl.textContent = t('level');
+            livesLabelEl.textContent = t('lives');
+            nextLabelEl.textContent = t('next');
+            pausedLabelEl.textContent = t('overlayPaused');
+            resumeButton.textContent = t('overlayResume');
+            dropButton.textContent = t('drop');
+            gameOverTitleEl.textContent = t('gameOver');
+            restartButton.textContent = t('playAgain');
+
+            pauseButton.textContent = t(isPaused ? 'pauseBtnResume' : 'pauseBtnPause');
+            musicToggle.textContent = '♪ ' + t(musicOn ? 'musicOn' : 'musicOff');
+            updateFxToggleText();
+            finalScoreText.textContent = t('yourScore', { score: lastGameOverScore });
+            if (continueErrorEl.style.display !== 'none' && lastContinueErrorKey) {
+                continueErrorEl.textContent = t(lastContinueErrorKey);
+            }
+            if (gameOverModal.style.display === 'flex') prepareContinueButton();
+
+            if (document.activeElement !== languageSelect) populateLanguageSelect();
+        }
+
         const canvas = document.getElementById('tetris');
         const context = canvas.getContext('2d');
         const previewCanvas = document.getElementById('preview');
@@ -468,7 +691,7 @@
         const pauseOverlay = document.getElementById('pauseOverlay');
         const resumeButton = document.getElementById('resumeButton');
         const gameOverModal = document.getElementById('gameOverModal');
-        const finalScoreEl = document.getElementById('finalScore');
+        const finalScoreText = document.getElementById('finalScoreText');
         const restartButton = document.getElementById('restartButton');
         const continueButton = document.getElementById('continueButton');
         const continueErrorEl = document.getElementById('continueError');
@@ -482,6 +705,18 @@
         const closeSettingsButton = document.getElementById('closeSettingsButton');
         const volumeSlider = document.getElementById('volumeSlider');
         const volumeValueEl = document.getElementById('volumeValue');
+        const languageSelect = document.getElementById('languageSelect');
+        const dropButton = document.getElementById('dropButton');
+        const scoreLabelEl = document.getElementById('scoreLabel');
+        const linesLabelEl = document.getElementById('linesLabel');
+        const levelLabelEl = document.getElementById('levelLabel');
+        const livesLabelEl = document.getElementById('livesLabel');
+        const nextLabelEl = document.getElementById('nextLabel');
+        const pausedLabelEl = document.getElementById('pausedLabel');
+        const settingsTitleEl = document.getElementById('settingsTitle');
+        const volumeLabelEl = document.getElementById('volumeLabel');
+        const languageLabelEl = document.getElementById('languageLabel');
+        const gameOverTitleEl = document.getElementById('gameOverTitle');
 
         const COLS = 12;
         const ROWS = 24;
@@ -887,12 +1122,12 @@
             if (isPaused) {
                 cancelAnimationFrame(animationFrameId);
                 pauseOverlay.style.display = 'flex';
-                pauseButton.textContent = 'RESUME';
+                pauseButton.textContent = t('pauseBtnResume');
             } else {
                 lastTime = performance.now();
                 update();
                 pauseOverlay.style.display = 'none';
-                pauseButton.textContent = 'PAUSE';
+                pauseButton.textContent = t('pauseBtnPause');
             }
         }
 
@@ -900,10 +1135,12 @@
             if (document.hidden && !isPaused && !isGameOver) togglePause();
         }
 
+        let lastGameOverScore = 0;
         function handleGameOver() {
             isGameOver = true;
             sfxGameOver();
-            finalScoreEl.textContent = score;
+            lastGameOverScore = score;
+            finalScoreText.textContent = t('yourScore', { score });
             board.forEach((row, y) => row.forEach((value, x) => {
                 if (value > 0) createExplosion(x, y, COLORS[value]);
             }));
@@ -914,27 +1151,36 @@
 
         // Sets the modal's continue button to either "free life" or "paid" mode
         // and wires its handler. Called each time the game-over modal is shown.
+        // lastResolvedPrice/lastContinueErrorKey remember state purely so a
+        // language switch mid-game-over can re-render the button/error in
+        // the new language without re-running the purchase flow itself.
+        let lastResolvedPrice = null;
+        let lastContinueErrorKey = null;
         function prepareContinueButton() {
             continueErrorEl.style.display = 'none';
+            lastContinueErrorKey = null;
             continueButton.disabled = false;
             if (lives > 0) {
                 // Free continues still available - restarting would just throw away
                 // a life you haven't used, so Play Again stays hidden until lives run out.
                 restartButton.style.display = 'none';
-                continueButton.textContent = `CONTINUE (${lives} LEFT)`;
+                continueButton.textContent = t('continueWithLives', { lives });
                 continueButton.onclick = () => continueAfterGameOver(false);
                 return;
             }
             // Lives are gone: show Play Again alongside the paid continue so there's
             // always a free way forward, not just a paywall.
             restartButton.style.display = '';
-            continueButton.textContent = `CONTINUE — ${CONTINUE_PRICE_FALLBACK}`;
+            continueButton.textContent = t('continueWithPrice', { price: lastResolvedPrice || CONTINUE_PRICE_FALLBACK });
             continueButton.onclick = () => continueAfterGameOver(true);
             const iap = NATIVE_PLUGINS.continuePurchase;
             if (iap) {
                 // Replace the fallback label with StoreKit's real localized price once it loads.
                 iap.getPrice().then(result => {
-                    if (result && result.priceString) continueButton.textContent = `CONTINUE — ${result.priceString}`;
+                    if (result && result.priceString) {
+                        lastResolvedPrice = result.priceString;
+                        continueButton.textContent = t('continueWithPrice', { price: lastResolvedPrice });
+                    }
                 }).catch(() => {});
             }
         }
@@ -942,6 +1188,7 @@
         async function continueAfterGameOver(requiresPayment) {
             if (continuePurchaseInFlight) return;
             continueErrorEl.style.display = 'none';
+            lastContinueErrorKey = null;
 
             if (!requiresPayment) {
                 lives--;
@@ -952,26 +1199,28 @@
             const iap = NATIVE_PLUGINS.continuePurchase;
             if (!iap) {
                 // Plain-browser / non-Capacitor context: no real StoreKit to charge through.
-                continueErrorEl.textContent = 'Purchases are only available in the App Store version.';
+                lastContinueErrorKey = 'browserOnly';
+                continueErrorEl.textContent = t('browserOnly');
                 continueErrorEl.style.display = 'block';
                 return;
             }
 
             continuePurchaseInFlight = true;
             continueButton.disabled = true;
-            continueButton.textContent = 'PROCESSING…';
+            continueButton.textContent = t('processing');
             try {
                 const result = await iap.purchase();
                 if (result && result.success) {
                     resumeAfterContinue();
                 } else {
-                    continueErrorEl.textContent = result && result.error === 'cancelled'
-                        ? 'Purchase cancelled.' : 'Purchase failed. Try again.';
+                    lastContinueErrorKey = (result && result.error === 'cancelled') ? 'purchaseCancelled' : 'purchaseFailed';
+                    continueErrorEl.textContent = t(lastContinueErrorKey);
                     continueErrorEl.style.display = 'block';
                     prepareContinueButton();
                 }
             } catch (err) {
-                continueErrorEl.textContent = 'Purchase failed. Try again.';
+                lastContinueErrorKey = 'purchaseFailed';
+                continueErrorEl.textContent = t('purchaseFailed');
                 continueErrorEl.style.display = 'block';
                 prepareContinueButton();
             } finally {
@@ -1022,7 +1271,7 @@
             updateScore();
             gameOverModal.style.display = 'none';
             pauseOverlay.style.display = 'none';
-            pauseButton.textContent = 'PAUSE';
+            pauseButton.textContent = t('pauseBtnPause');
             update();
         }
 
@@ -1328,12 +1577,13 @@
                 kaiju.style.top = restY + 'px';
                 prop = 'left';
                 if (type.entrance === 'left') {
-                    // Half its width pokes past the board's left edge, the rest
-                    // stays off-canvas.
-                    restX = cr.left - kW * 0.5;
+                    // Just over a third of its width pokes past the board's
+                    // edge - stepped back a bit further than a straight half,
+                    // rest stays off-canvas.
+                    restX = cr.left - kW * 0.62;
                     startVal = -kW; endVal = restX;
                 } else {
-                    restX = cr.right - kW * 0.5;
+                    restX = cr.right - kW * 0.62;
                     startVal = vw; endVal = restX;
                 }
                 kaiju.style[prop] = startVal + 'px';
@@ -1540,7 +1790,7 @@
         // doesn't - autoplay would be blocked without a fresh user gesture
         // anyway, so MUSIC always starts OFF and the player opts back in.
         function saveAudioPrefs() {
-            try { localStorage.setItem('kaijuBlocksAudioPrefs', JSON.stringify({ fxOn, masterVolume })); } catch (e) {}
+            try { localStorage.setItem('kaijuBlocksAudioPrefs', JSON.stringify({ fxOn, masterVolume, languagePref })); } catch (e) {}
         }
         function loadAudioPrefs() {
             try {
@@ -1550,6 +1800,10 @@
                 if (typeof prefs.fxOn === 'boolean') fxOn = prefs.fxOn;
                 if (typeof prefs.masterVolume === 'number' && isFinite(prefs.masterVolume)) {
                     masterVolume = Math.min(1, Math.max(0, prefs.masterVolume));
+                }
+                if (typeof prefs.languagePref === 'string' &&
+                    (prefs.languagePref === 'auto' || SUPPORTED_LANGUAGES.includes(prefs.languagePref))) {
+                    languagePref = prefs.languagePref;
                 }
             } catch (e) {}
         }
@@ -1572,7 +1826,7 @@
         function startMusic() {
             ensureAudio();
             musicOn = true;
-            musicToggle.textContent = '♪ MUSIC: ON';
+            musicToggle.textContent = '♪ ' + t('musicOn');
             musicToggle.classList.add('on');
             playMusicTrack(currentMusicTrack);
         }
@@ -1583,7 +1837,7 @@
                 el.pause();
             });
             musicOn = false;
-            musicToggle.textContent = '♪ MUSIC: OFF';
+            musicToggle.textContent = '♪ ' + t('musicOff');
             musicToggle.classList.remove('on');
             if (audioCtx) audioCtx.suspend();
         }
@@ -1643,11 +1897,14 @@
         function sfxBeamFire() { if (playCustomSfx('beamFire')) return; sBlip(700, 0.08, 'sawtooth', 0.10, 1400); }
         function sfxLaserFire() { if (playCustomSfx('laserFire')) return; sBlip(1400, 0.05, 'square', 0.08, 2200); }
 
+        function updateFxToggleText() {
+            fxToggle.textContent = (fxOn ? '\u{1F50A} ' : '\u{1F507} ') + t(fxOn ? 'fxOn' : 'fxOff');
+            fxToggle.classList.toggle('on', fxOn);
+        }
         musicToggle.addEventListener('click', () => { musicOn ? stopMusic() : startMusic(); });
         fxToggle.addEventListener('click', () => {
             fxOn = !fxOn;
-            fxToggle.textContent = fxOn ? '\u{1F50A} FX: ON' : '\u{1F507} FX: OFF';
-            fxToggle.classList.toggle('on', fxOn);
+            updateFxToggleText();
             saveAudioPrefs();
         });
         volumeSlider.addEventListener('input', () => {
@@ -1667,7 +1924,7 @@
             if (settingsPausedGame) {
                 isPaused = true;
                 cancelAnimationFrame(animationFrameId);
-                pauseButton.textContent = 'RESUME';
+                pauseButton.textContent = t('pauseBtnResume');
             }
             settingsModal.style.display = 'flex';
         }
@@ -1677,12 +1934,17 @@
                 isPaused = false;
                 lastTime = performance.now();
                 update();
-                pauseButton.textContent = 'PAUSE';
+                pauseButton.textContent = t('pauseBtnPause');
             }
             settingsPausedGame = false;
         }
         settingsButton.addEventListener('click', openSettings);
         closeSettingsButton.addEventListener('click', closeSettings);
+        languageSelect.addEventListener('change', () => {
+            languagePref = languageSelect.value;
+            applyTranslations();
+            saveAudioPrefs();
+        });
         // ==================== end music ===================================
 
         const controlsActions = {
@@ -1728,10 +1990,9 @@
         preloadBeamImages();
         preloadCustomAudio();
         loadAudioPrefs();
-        fxToggle.textContent = fxOn ? '\u{1F50A} FX: ON' : '\u{1F507} FX: OFF';
-        fxToggle.classList.toggle('on', fxOn);
         volumeSlider.value = Math.round(masterVolume * 100);
         volumeValueEl.textContent = `${volumeSlider.value}%`;
+        applyTranslations();
 
         window.addEventListener('resize', () => {
             resizeGame();
