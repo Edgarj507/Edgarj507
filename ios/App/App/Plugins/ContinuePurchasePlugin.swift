@@ -11,12 +11,12 @@ public class ContinuePurchasePlugin: CAPPlugin {
             do {
                 let products = try await Product.products(for: [productId])
                 guard let product = products.first else {
-                    call.resolve(["priceString": "$0.29"])
+                    call.resolve(["priceString": "$1.50"])
                     return
                 }
                 call.resolve(["priceString": product.displayPrice])
             } catch {
-                call.resolve(["priceString": "$0.29"])
+                call.resolve(["priceString": "$1.50"])
             }
         }
     }
