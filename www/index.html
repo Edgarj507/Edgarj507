@@ -452,6 +452,21 @@
     // closes off the "type it into the console" tamper path most players
     // would actually try.
     (function () {
+        // Captured once, here, rather than re-reading window.Capacitor.Plugins.X
+        // fresh at each call site (as this used to). If something running in
+        // the page later reassigns window.Capacitor.Plugins.ContinuePurchase
+        // to a fake object that always resolves success (the realistic way
+        // to fake a purchase from JS alone, without ever reaching the native
+        // StoreKit2 code below that actually verifies it), this binding still
+        // points at whatever was really there at startup - a swap after the
+        // fact doesn't change what continueAfterGameOver() and friends call.
+        // This doesn't help against something that tampers *before* this line
+        // runs; nothing client-side can rule that out without a server.
+        const NATIVE_PLUGINS = Object.freeze({
+            continuePurchase: window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.ContinuePurchase,
+            gameCenter: window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.GameCenter,
+            haptics: window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.Haptics
+        });
         const canvas = document.getElementById('tetris');
         const context = canvas.getContext('2d');
         const previewCanvas = document.getElementById('preview');
@@ -926,7 +941,7 @@
             restartButton.style.display = '';
             continueButton.textContent = `CONTINUE — ${CONTINUE_PRICE_FALLBACK}`;
             continueButton.onclick = () => continueAfterGameOver(true);
-            const iap = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.ContinuePurchase;
+            const iap = NATIVE_PLUGINS.continuePurchase;
             if (iap) {
                 // Replace the fallback label with StoreKit's real localized price once it loads.
                 iap.getPrice().then(result => {
@@ -945,7 +960,7 @@
                 return;
             }
 
-            const iap = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.ContinuePurchase;
+            const iap = NATIVE_PLUGINS.continuePurchase;
             if (!iap) {
                 // Plain-browser / non-Capacitor context: no real StoreKit to charge through.
                 continueErrorEl.textContent = 'Purchases are only available in the App Store version.';
@@ -1378,15 +1393,15 @@
         // Guarded the same way as ContinuePurchase above: no-op outside the
         // Capacitor shell so kaiju-blocks.html (plain browser) still runs.
         function hapticImpact(style) {
-            const plugin = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.Haptics;
+            const plugin = NATIVE_PLUGINS.haptics;
             if (plugin) plugin.impact({ style }).catch(() => {});
         }
         function hapticNotification(type) {
-            const plugin = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.Haptics;
+            const plugin = NATIVE_PLUGINS.haptics;
             if (plugin) plugin.notification({ type }).catch(() => {});
         }
         function gameCenterSignIn() {
-            const plugin = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.GameCenter;
+            const plugin = NATIVE_PLUGINS.gameCenter;
             if (plugin) plugin.signIn().catch(e => console.warn('Game Center sign-in skipped:', e));
         }
         // The true ceiling a perfect player could reach for a given number of
@@ -1426,7 +1441,7 @@
             return dp[totalLines];
         }
         function gameCenterSubmitScore(finalScore) {
-            const plugin = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.GameCenter;
+            const plugin = NATIVE_PLUGINS.gameCenter;
             if (!plugin) return;
             const ceiling = maxPossibleScore(lines);
             if (finalScore > ceiling) {
