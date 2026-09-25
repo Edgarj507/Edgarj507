@@ -8,6 +8,7 @@ const en = {
   'hud.puttView': 'Putt View', 'hud.pin': 'Pin', 'hud.up': 'Up', 'hud.down': 'Down', 'hud.flat': 'Flat',
   'hud.communityPin': 'Community pin', 'hud.defaultPin': 'Course default pin', 'hud.front': 'front', 'hud.back': 'back',
   'hud.left': 'left', 'hud.right': 'right', 'hud.centre': 'centre', 'hud.reports': 'reports',
+  'hud.target': 'Measured target — tap to clear', 'hud.toPin': 'to pin', 'hud.recenter': 'Recenter on shot',
   // putt view
   'putt.reader': 'LiDAR green reader', 'putt.break': 'Calculated break', 'putt.aim': 'Aim', 'putt.pace': 'Pace for',
   'putt.distance': 'Distance', 'putt.slope': 'Slope', 'putt.elevation': 'Elevation', 'putt.notOnGreen': 'Not on the green yet',
@@ -41,6 +42,7 @@ const es: Dict = {
   'hud.puttView': 'Vista putt', 'hud.pin': 'Bandera', 'hud.up': 'Subida', 'hud.down': 'Bajada', 'hud.flat': 'Plano',
   'hud.communityPin': 'Bandera comunidad', 'hud.defaultPin': 'Bandera por defecto', 'hud.front': 'delante', 'hud.back': 'detrás',
   'hud.left': 'izq.', 'hud.right': 'der.', 'hud.centre': 'centro', 'hud.reports': 'reportes',
+  'hud.target': 'Objetivo medido — toca para quitar', 'hud.toPin': 'a bandera', 'hud.recenter': 'Recentrar en el golpe',
   'putt.reader': 'Lector de green LiDAR', 'putt.break': 'Caída calculada', 'putt.aim': 'Apunta', 'putt.pace': 'Fuerza para',
   'putt.distance': 'Distancia', 'putt.slope': 'Pendiente', 'putt.elevation': 'Desnivel', 'putt.notOnGreen': 'Aún no estás en el green',
   'putt.readsWithin': 'La vista putt lee a menos de 20 yd.', 'putt.confirmCup': 'Confirmar posición del hoyo', 'putt.cupShared': 'Posición compartida',

@@ -34,3 +34,15 @@ html, body, #root {
   padding: var(--sa-top, env(safe-area-inset-top)) var(--sa-right, env(safe-area-inset-right))
     var(--sa-bottom, env(safe-area-inset-bottom)) var(--sa-left, env(safe-area-inset-left));
 }
+
+/* Tap-to-measure target on the satellite map (DOM marker; see SatelliteMap.tsx). */
+.eg-target { position: relative; display: grid; place-items: center; width: 28px; height: 28px; background: none; border: 0; padding: 0; cursor: pointer; }
+.eg-target-ring { width: 22px; height: 22px; border-radius: 9999px; border: 2px solid #fbbf24; background: rgb(251 191 36 / 0.15); box-shadow: 0 0 12px rgb(251 191 36 / 0.45); }
+.eg-target-card {
+  position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); white-space: nowrap;
+  display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 4px 8px; border-radius: 10px;
+  background: rgb(0 0 0 / 0.6); border: 1px solid rgb(255 255 255 / 0.12); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  color: #fff; font: 600 12px/1.1 var(--font-mono);
+}
+.eg-target-card small { font: 700 8px/1 var(--font-sans); letter-spacing: 0.12em; color: rgb(255 255 255 / 0.55); }
+.maplibregl-canvas:focus-visible { outline: none; }

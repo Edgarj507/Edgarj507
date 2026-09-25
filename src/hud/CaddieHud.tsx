@@ -1,6 +1,12 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, Aperture, Check, ChevronLeft, BadgeCheck, ChevronRight, Cloud, CloudOff, Flag, Users, Mountain, RotateCcw, Thermometer } from 'lucide-react';
 import { MapPlaceholder } from './MapPlaceholder';
+import { imageryProvider } from '../map/providers';
+import { aimPosition, ballPosition, holeGeometry } from '../map/geometry';
+
+// MapLibre (~250 KB gz) loads only when the HUD opens.
+const SatelliteMap = lazy(() => import('../map/SatelliteMap'));
+const PROVIDER = imageryProvider();
 import { PuttView } from './PuttView';
 import { playsLike, recommendClub, windArrowDeg, type Club, type Conditions } from '../lib/caddie';
 import { lieFor, type Hole, type TeeId } from '../data/course';
@@ -78,6 +84,15 @@ export function CaddieHud({
     return parts.length ? parts : [t('hud.centre')];
   })();
 
+  // Map geometry for the current lie: ball, aim point and live pin on real coordinates.
+  const [mapFailed, setMapFailed] = useState(!PROVIDER);
+  const geo = useMemo(() => holeGeometry(hole), [hole]);
+  const ball = useMemo(() => ballPosition(geo, lie.pin), [geo, lie.pin]);
+  const pinLL = useMemo(() => (pins.live ? { lat: pins.live.lat, lng: pins.live.lng } : geo.green), [pins.live?.lat, pins.live?.lng, geo]);
+  const aim = useMemo(() => aimPosition(geo, ball, lineYds, pinLL), [geo, ball, lineYds, pinLL]);
+  const fmtMeters = useCallback((m: number) => `${d(m / 0.9144)}${u}`, [d, u]);
+  const mapLabels = useMemo(() => ({ target: t('hud.target'), toPin: t('hud.toPin'), recenter: t('hud.recenter') }), [t]);
+
   const calc = playsLike(lineYds, hole.bearingDeg, conditions);
   const target = tournamentMode ? lineYds : calc.yards;
   // Putter only once within 20y; otherwise recommend from full-swing clubs.
@@ -93,13 +108,30 @@ export function CaddieHud({
 
   return (
     <div className="relative h-full w-full overflow-hidden text-white select-none">
-      <MapPlaceholder />
-
-      {/* Center reticle */}
-      <div className="pointer-events-none absolute left-1/2 top-[42%] short:hidden -translate-x-1/2 -translate-y-1/2 text-white/25">
-        <div className="h-10 w-10 rounded-full border border-current" />
-        <div className="absolute left-1/2 top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
-      </div>
+      {/* Layer 0: live satellite map (gestures reach it wherever no widget sits above). */}
+      {mapFailed || !PROVIDER ? (
+        <>
+          <MapPlaceholder />
+          <div className="pointer-events-none absolute left-1/2 top-[42%] short:hidden -translate-x-1/2 -translate-y-1/2 text-white/25">
+            <div className="h-10 w-10 rounded-full border border-current" />
+            <div className="absolute left-1/2 top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+          </div>
+        </>
+      ) : (
+        <Suspense fallback={<MapPlaceholder />}>
+          <SatelliteMap
+            provider={PROVIDER}
+            bearing={geo.bearing}
+            holeKey={hole.number}
+            ball={ball}
+            aim={aim}
+            pin={pinLL}
+            fmt={fmtMeters}
+            labels={mapLabels}
+            onFail={() => setMapFailed(true)}
+          />
+        </Suspense>
+      )}
 
       {/* ── Top overlays ── */}
       <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-3 pt-safe pl-safe pr-safe">
@@ -275,6 +307,9 @@ export function CaddieHud({
               </button>
             </div>
           </section>
+          {!mapFailed && PROVIDER && (
+            <p className="pointer-events-none -mt-1 text-center text-[8px] leading-none text-white/35">{PROVIDER.attribution}</p>
+          )}
         </div>
       </div>
 
