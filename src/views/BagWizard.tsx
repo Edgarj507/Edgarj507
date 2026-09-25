@@ -1,34 +1,16 @@
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
-import { Check, ChevronLeft, Minus, Plus, Search, X } from 'lucide-react';
+import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { Check, ChevronLeft, Minus, Plus, RotateCcw, Search, X } from 'lucide-react';
 import { BRANDS, CATEGORIES, EQUIPMENT, modelId, optionId, type Brand, type Category, type Model } from '../data/equipment';
-import type { Club } from '../lib/caddie';
-
-interface Selection {
-  brands: Brand[];
-  /** modelId values */
-  models: string[];
-  /** optionId values */
-  options: string[];
-}
-
-const GEAR_KEY = 'eg.gear.v1';
-const EMPTY: Selection = { brands: [], models: [], options: [] };
-
-function loadSelection(): Selection {
-  try {
-    const s = JSON.parse(localStorage.getItem(GEAR_KEY) ?? 'null');
-    if (s && Array.isArray(s.brands) && Array.isArray(s.models) && Array.isArray(s.options)) {
-      return { ...s, brands: s.brands.filter((b: string) => (BRANDS as string[]).includes(b)) };
-    }
-  } catch { /* blocked or corrupt */ }
-  return EMPTY;
-}
+import type { BagClub, GearSelection } from '../lib/bag';
 
 const toggle = <T,>(list: T[], item: T) => (list.includes(item) ? list.filter((i) => i !== item) : [...list, item]);
 
 interface Props {
-  bag: Club[];
-  setBag: Dispatch<SetStateAction<Club[]>>;
+  bag: BagClub[];
+  gear: GearSelection;
+  setGear: Dispatch<SetStateAction<GearSelection>>;
+  setCarry: (key: string, carry: number) => void;
+  resetCarry: (key: string) => void;
   onExit: () => void;
 }
 
@@ -36,29 +18,26 @@ const card = 'rounded-xl border backdrop-blur-md transition-all';
 const on = 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400';
 const off = 'bg-black/40 border-white/10 text-white/80 hover:bg-white/5';
 
-export function BagWizard({ bag, setBag, onExit }: Props) {
+export function BagWizard({ bag, gear: sel, setGear: setSel, setCarry, resetCarry, onExit }: Props) {
   const [step, setStep] = useState(1);
-  const [sel, setSel] = useState<Selection>(loadSelection);
   const [category, setCategory] = useState<Category | 'All'>('All');
   const [query, setQuery] = useState('');
 
-  useEffect(() => {
-    try { localStorage.setItem(GEAR_KEY, JSON.stringify(sel)); } catch { /* quota / blocked */ }
-  }, [sel]);
-
+  // Stored ids are strings; keep only brands that still exist in the catalog.
+  const brands = BRANDS.filter((b) => sel.brands.includes(b));
   const q = query.trim().toLowerCase();
   const visible = useMemo(
     () =>
-      sel.brands.map((brand) => ({
+      brands.map((brand) => ({
         brand,
         models: EQUIPMENT[brand].filter(
           (mo) => (category === 'All' || mo.category === category) && (!q || `${brand} ${mo.name}`.toLowerCase().includes(q)),
         ),
       })),
-    [sel.brands, category, q],
+    [brands.join(), category, q],
   );
 
-  const chosenModels = sel.brands.flatMap((brand) =>
+  const chosenModels = brands.flatMap((brand) =>
     EQUIPMENT[brand].filter((mo) => sel.models.includes(modelId(brand, mo))).map((mo) => ({ brand, model: mo })),
   );
   const optionCount = chosenModels.reduce(
@@ -231,19 +210,28 @@ export function BagWizard({ bag, setBag, onExit }: Props) {
 
             <div className="flex flex-col gap-2 rounded-xl border border-white/5 bg-black/30 p-3">
               <div className="flex items-baseline justify-between pl-1">
-                <span className="text-[9px] font-bold uppercase tracking-widest text-white/50">Carry Yardages</span>
+                <span className="text-[9px] font-bold uppercase tracking-widest text-white/50">Carry Yardages · {bag.length} clubs</span>
                 <span className="text-[9px] text-emerald-400/70">Drives HUD club picks</span>
               </div>
-              {bag.map((club, idx) => (
-                <div key={club.label} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-1.5">
-                  <span className="text-xs font-bold text-white">{club.label}</span>
+              <p className="pl-1 text-[9px] leading-snug text-white/40">
+                Built from the clubs picked above. Estimates are marked <span className="text-amber-300/80">est</span> — tap ± to set your real carry.
+              </p>
+              {bag.map((club) => (
+                <div key={club.key} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-1.5">
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-white">{club.label}</div>
+                    <div className="truncate text-[8px] uppercase tracking-wider text-white/35">{club.source}</div>
+                  </div>
                   {club.carry === 0 ? (
                     <span className="text-[10px] uppercase tracking-wider text-white/40">On green</span>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <button onClick={() => setBag((b) => b.map((c, i) => (i === idx ? { ...c, carry: Math.max(5, c.carry - 5) } : c)))} aria-label={`Decrease ${club.label} carry`} className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white/70 active:scale-90"><Minus size={12} /></button>
+                      {club.estimated
+                        ? <span className="text-[8px] font-bold uppercase text-amber-300/80">est</span>
+                        : <button onClick={() => resetCarry(club.key)} aria-label={`Reset ${club.label} carry`} className="text-white/30"><RotateCcw size={10} /></button>}
+                      <button onClick={() => setCarry(club.key, club.carry - 5)} aria-label={`Decrease ${club.label} carry`} className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white/70 active:scale-90"><Minus size={12} /></button>
                       <span className="w-12 text-center font-mono text-xs text-emerald-400">{club.carry}y</span>
-                      <button onClick={() => setBag((b) => b.map((c, i) => (i === idx ? { ...c, carry: Math.min(400, c.carry + 5) } : c)))} aria-label={`Increase ${club.label} carry`} className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white/70 active:scale-90"><Plus size={12} /></button>
+                      <button onClick={() => setCarry(club.key, club.carry + 5)} aria-label={`Increase ${club.label} carry`} className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white/70 active:scale-90"><Plus size={12} /></button>
                     </div>
                   )}
                 </div>

@@ -1,10 +1,10 @@
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { createSecureStore } from './secureStore';
 import { isRoundState, newRound, roundReducer } from './round';
 import type { Club } from './caddie';
+import { deriveBag, EMPTY_GEAR, type GearSelection } from './bag';
 
 const ROUND_KEY = 'eg.round.v3';
-const BAG_KEY = 'eg.bag.v1';
 
 const local = (() => {
   try {
@@ -47,21 +47,43 @@ export const DEFAULT_BAG: Club[] = [
   { label: '60°', carry: 70 }, { label: 'Putter', carry: 0 },
 ];
 
-const isBag = (x: unknown): x is Club[] =>
-  Array.isArray(x) && x.every((c) => typeof c?.label === 'string' && Number.isFinite(c?.carry));
+const GEAR_KEY = 'eg.gear.v1';
+const CARRY_KEY = 'eg.carry.v1';
 
-/** Club carry yardages that drive the HUD's club recommendation. */
-export function useBag() {
-  const [bag, setBag] = useState<Club[]>(() => {
+function useLocalJson<T>(key: string, fallback: T, valid: (x: unknown) => x is T) {
+  const [value, setValue] = useState<T>(() => {
     try {
-      const saved = JSON.parse(local?.getItem(BAG_KEY) ?? 'null');
-      return isBag(saved) ? saved : DEFAULT_BAG;
+      const saved = JSON.parse(local?.getItem(key) ?? 'null');
+      return valid(saved) ? saved : fallback;
     } catch {
-      return DEFAULT_BAG;
+      return fallback;
     }
   });
   useEffect(() => {
-    try { local?.setItem(BAG_KEY, JSON.stringify(bag)); } catch { /* quota / blocked */ }
-  }, [bag]);
-  return [bag, setBag] as const;
+    try { local?.setItem(key, JSON.stringify(value)); } catch { /* quota / blocked */ }
+  }, [key, value]);
+  return [value, setValue] as const;
+}
+
+const strArr = (x: unknown) => Array.isArray(x) && x.every((v) => typeof v === 'string');
+const isGear = (x: unknown): x is GearSelection => {
+  const g = x as GearSelection;
+  return !!g && strArr(g.brands) && strArr(g.models) && strArr(g.options);
+};
+const isCarryMap = (x: unknown): x is Record<string, number> =>
+  !!x && typeof x === 'object' && !Array.isArray(x) &&
+  Object.values(x).every((v) => Number.isInteger(v) && v >= 0 && v <= 400);
+
+/**
+ * The golfer's bag: gear picked in My Bag → clubs with estimated carries, plus per-club carry
+ * overrides. This is what the HUD's club recommendation uses.
+ */
+export function useBag() {
+  const [gear, setGear] = useLocalJson<GearSelection>(GEAR_KEY, EMPTY_GEAR, isGear);
+  const [overrides, setOverrides] = useLocalJson<Record<string, number>>(CARRY_KEY, {}, isCarryMap);
+  const bag = useMemo(() => deriveBag(gear, overrides, DEFAULT_BAG), [gear, overrides]);
+  const setCarry = (key: string, carry: number) =>
+    setOverrides((o) => ({ ...o, [key]: Math.max(5, Math.min(400, Math.round(carry))) }));
+  const resetCarry = (key: string) => setOverrides(({ [key]: _drop, ...rest }) => rest);
+  return { bag, gear, setGear, setCarry, resetCarry };
 }

@@ -57,7 +57,7 @@ export default function App() {
   const setupConfig: RoundConfig = { tee: courseSetup.tee, format: courseSetup.format, length: courseSetup.length };
 
   const [round, dispatch] = useRound();
-  const [bag, setBag] = useBag();
+  const { bag, gear, setGear, setCarry, resetCarry } = useBag();
 
   const startRound = () => {
     if (hasStrokes(round) && sameConfig(round.config, setupConfig)) return setCurrentView('hud');
@@ -539,7 +539,7 @@ export default function App() {
               {currentView === 'menu' && ViewMenu()}
               {currentView === 'course' && ViewCourse()}
               {currentView === 'invite' && ViewInvite()}
-              {currentView === 'bag' && <BagWizard bag={bag} setBag={setBag} onExit={() => setCurrentView('menu')} />}
+              {currentView === 'bag' && <BagWizard bag={bag} gear={gear} setGear={setGear} setCarry={setCarry} resetCarry={resetCarry} onExit={() => setCurrentView('menu')} />}
               {currentView === 'friends' && ViewFriends()}
               {currentView === 'scorecard' && (
                 <Scorecard

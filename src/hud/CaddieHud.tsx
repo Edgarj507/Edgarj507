@@ -192,7 +192,7 @@ export function CaddieHud({
               <Stat label="Plays Like" value={tournamentMode ? '—' : target} accent />
               <div className="flex flex-col items-center">
                 <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/50">Club</span>
-                <span className="text-2xl font-black leading-tight tracking-tight">{club?.label ?? '—'}</span>
+                <span className="text-2xl font-black leading-tight tracking-tight">{club ? club.label.replace(/^(\S+) [\d.]+°$/, '$1') : '—'}</span>
               </div>
             </div>
 
