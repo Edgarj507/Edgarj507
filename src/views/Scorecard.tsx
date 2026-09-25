@@ -2,6 +2,7 @@ import { ChevronLeft } from 'lucide-react';
 import { COURSE, TEES, type Hole } from '../data/course';
 import { holeRange, totals, type RoundState } from '../lib/round';
 import type { ScoringSummary } from '../lib/scoring';
+import { usePrefs } from '../i18n/prefs';
 
 interface Props {
   round: RoundState;
@@ -26,6 +27,7 @@ function scoreStyle(strokes: number, par: number) {
 }
 
 export function Scorecard({ round, holes, summary, onBack, onSelectHole, onNewRound }: Props) {
+  const { t, d, u } = usePrefs();
   const { start, end } = holeRange(round.config.length);
   const pars = holes.map((h) => h.par);
   const nines = [0, 9].filter((from) => from >= start && from + 8 <= end);
@@ -49,27 +51,27 @@ export function Scorecard({ round, holes, summary, onBack, onSelectHole, onNewRo
           <button onClick={onBack} aria-label="Back to HUD" className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-black/40 text-white/80 backdrop-blur-md active:scale-95">
             <ChevronLeft size={16} />
           </button>
-          <h2 className="text-xs font-bold uppercase tracking-widest text-white">Scorecard</h2>
+          <h2 className="text-xs font-bold uppercase tracking-widest text-white">{t('card.title')}</h2>
         </div>
         <div className="flex flex-col items-end rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-1">
           <span className="font-mono text-base font-bold leading-tight text-emerald-400">{summary.headline}</span>
-          <span className="text-[8px] font-bold uppercase tracking-widest text-emerald-400/70">{summary.caption} · Thru {played.thru}</span>
+          <span className="text-[8px] font-bold uppercase tracking-widest text-emerald-400/70">{summary.caption} · {t('card.thru')} {played.thru}</span>
         </div>
       </div>
 
       <p className="mb-3 text-[10px] uppercase tracking-widest text-white/40">
-        {COURSE.name} · {TEES[round.config.tee].label} tees · {round.config.length === '18' ? '18 holes' : round.config.length === 'front' ? 'Front 9' : 'Back 9'}
+        {COURSE.name} · {TEES[round.config.tee].label} tees · {t(round.config.length === '18' ? 'setup.18' : round.config.length === 'front' ? 'setup.front' : 'setup.back')}
       </p>
 
       <div className="no-scrollbar z-10 flex-1 overflow-y-auto pb-24">
         {nines.map((from) => {
-          const t = totals(round.shots, pars, from, from + 9);
+          const nt = totals(round.shots, pars, from, from + 9);
           const par = pars.slice(from, from + 9).reduce((a, b) => a + b, 0);
           const yds = holes.slice(from, from + 9).reduce((a, h) => a + h.yards, 0);
           return (
             <div key={from} className="mb-3 overflow-hidden rounded-2xl border border-white/10 bg-black/40 backdrop-blur-md">
               <div className={`grid ${cols} border-b border-white/10 px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-white/40`}>
-                <span>Hole</span><span>Yds</span><span className="text-center">Par</span><span className="text-center">Score</span>
+                <span>{t('card.hole')}</span><span>{u === 'm' ? 'm' : 'yds'}</span><span className="text-center">{t('card.par')}</span><span className="text-center">{t('card.score')}</span>
                 {summary.column && <span className="text-center">{summary.column}</span>}
               </div>
               {holes.slice(from, from + 9).map((h, k) => {
@@ -83,7 +85,7 @@ export function Scorecard({ round, holes, summary, onBack, onSelectHole, onNewRo
                     className={`grid w-full ${cols} items-center px-3 py-2 text-left transition-colors ${round.current === i ? 'bg-emerald-500/10' : 'hover:bg-white/5'}`}
                   >
                     <span className={`font-mono text-xs font-bold ${round.current === i ? 'text-emerald-400' : 'text-white/80'}`}>{h.number}</span>
-                    <span className="font-mono text-[11px] text-white/40">{h.yards}</span>
+                    <span className="font-mono text-[11px] text-white/40">{d(h.yards)}</span>
                     <span className="text-center font-mono text-xs text-white/60">{h.par}</span>
                     <span className="flex justify-center">
                       <span className={`grid h-6 w-6 place-items-center font-mono text-xs font-bold ${scoreStyle(s, h.par)}`}>{s || '–'}</span>
@@ -95,10 +97,10 @@ export function Scorecard({ round, holes, summary, onBack, onSelectHole, onNewRo
                 );
               })}
               <div className={`grid ${cols} border-t border-white/10 bg-white/5 px-3 py-2 text-[10px] font-bold uppercase tracking-widest`}>
-                <span className="text-white/60">{from ? 'In' : 'Out'}</span>
-                <span className="font-mono text-white/40">{yds.toLocaleString()}</span>
+                <span className="text-white/60">{t(from ? 'card.in' : 'card.out')}</span>
+                <span className="font-mono text-white/40">{d(yds).toLocaleString()}</span>
                 <span className="text-center font-mono text-white/60">{par}</span>
-                <span className="text-center font-mono text-white">{t.strokes || '–'}</span>
+                <span className="text-center font-mono text-white">{nt.strokes || '–'}</span>
                 {summary.column && <span className="text-center font-mono text-white/60">{columnTotal(from)}</span>}
               </div>
             </div>
@@ -109,7 +111,7 @@ export function Scorecard({ round, holes, summary, onBack, onSelectHole, onNewRo
       <div className="absolute inset-x-5 bottom-6 z-20">
         <div className="rounded-2xl border border-white/10 bg-black/60 p-1.5 backdrop-blur-xl">
           <button onClick={onNewRound} className="w-full rounded-xl border border-white/5 bg-white/10 py-3.5 text-xs font-bold uppercase tracking-widest text-white transition-all hover:bg-white/20 active:scale-[0.98]">
-            End Round & Return to Menu
+            {t('card.end')}
           </button>
         </div>
       </div>

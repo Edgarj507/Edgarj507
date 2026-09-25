@@ -1,14 +1,24 @@
-import { Activity, Crosshair, X } from 'lucide-react';
+import { useState } from 'react';
+import { Activity, Check, Crosshair, MapPinned, X } from 'lucide-react';
+import { usePrefs } from '../i18n/prefs';
 import type { Lie } from '../data/course';
 
 interface Props {
   lie: Lie;
   holeNumber: number;
   onClose: () => void;
+  /** Share this cup position with the community pin network. Resolves to an error code or null. */
+  onConfirmCup?: () => Promise<string | null>;
 }
 
 /** Simulated LiDAR green read. Replace readings with the ARKit/LiDAR mesh pipeline. */
-export function PuttView({ lie, holeNumber, onClose }: Props) {
+export function PuttView({ lie, holeNumber, onClose, onConfirmCup }: Props) {
+  const { t, units } = usePrefs();
+  const [shared, setShared] = useState<'idle' | 'busy' | 'ok' | string>('idle');
+  const metric = units === 'meters';
+  const len = (ft: number) => (metric ? (ft * 0.3048).toFixed(1) : ft.toFixed(0));
+  const lenU = metric ? 'm' : 'ft';
+  const brk = (inches: number) => (metric ? `${Math.round(inches * 2.54)}cm` : `${inches}"`);
   const onGreen = lie.pin <= 20;
   const feet = onGreen ? Math.max(3, lie.pin * 3) : 30;
   const seed = holeNumber * 13;
@@ -37,7 +47,7 @@ export function PuttView({ lie, holeNumber, onClose }: Props) {
       <div className="relative z-10 flex items-center justify-between pt-safe pl-safe pr-safe">
         <span className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-black/60 px-3 py-1.5 font-mono text-[10px] text-emerald-400 backdrop-blur-md">
           <span className="h-1.5 w-1.5 animate-ping rounded-full bg-emerald-400" />
-          LiDAR GREEN READER
+          {t('putt.reader').toUpperCase()}
         </span>
         <button onClick={onClose} aria-label="Close putt view" className="grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-black/50 backdrop-blur-md active:scale-95">
           <X size={18} />
@@ -69,21 +79,33 @@ export function PuttView({ lie, holeNumber, onClose }: Props) {
             <>
               <div className="mb-3 text-center">
                 <div className="mb-1 inline-flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.2em] text-white/50">
-                  <Activity size={11} className="text-emerald-400" /> Calculated Break
+                  <Activity size={11} className="text-emerald-400" /> {t('putt.break')}
                 </div>
-                <div className="text-2xl font-bold tracking-tight">Aim {breakIn}" {dir}</div>
-                <div className="text-xs text-emerald-400">Pace for {Math.round(feet * 1.15)}ft</div>
+                <div className="text-2xl font-bold tracking-tight">{t('putt.aim')} {brk(breakIn)} {t(dir === 'Left' ? 'hud.left' : 'hud.right')}</div>
+                <div className="text-xs text-emerald-400">{t('putt.pace')} {len(feet * 1.15)}{lenU}</div>
               </div>
               <div className="grid grid-cols-3 divide-x divide-white/10 border-t border-white/10 pt-3 text-center">
-                <Reading label="Distance" value={feet.toFixed(0)} unit="ft" />
-                <Reading label="Slope" value={slope} unit="%" />
-                <Reading label="Elevation" value={`${elevIn > 0 ? '+' : ''}${elevIn}`} unit="in" tone={elevIn < 0 ? 'text-sky-300' : elevIn > 0 ? 'text-rose-300' : ''} />
+                <Reading label={t('putt.distance')} value={len(feet)} unit={lenU} />
+                <Reading label={t('putt.slope')} value={slope} unit="%" />
+                <Reading label={t('putt.elevation')} value={`${elevIn > 0 ? '+' : ''}${metric ? Math.round(elevIn * 2.54) : elevIn}`} unit={metric ? 'cm' : 'in'} tone={elevIn < 0 ? 'text-sky-300' : elevIn > 0 ? 'text-rose-300' : ''} />
               </div>
+              {onConfirmCup && (
+                <button
+                  disabled={shared === 'busy' || shared === 'ok'}
+                  onClick={async () => { setShared('busy'); setShared((await onConfirmCup()) ?? 'ok'); }}
+                  className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 text-[10px] font-black uppercase tracking-widest text-emerald-400 transition active:scale-[0.98] disabled:opacity-70"
+                >
+                  {shared === 'ok' ? <><Check size={13} /> {t('putt.cupShared')}</> : <><MapPinned size={13} /> {t('putt.confirmCup')}</>}
+                </button>
+              )}
+              {shared !== 'idle' && shared !== 'busy' && shared !== 'ok' && (
+                <p role="alert" className="mt-1 text-center text-[10px] text-rose-300">{shared.replace(/_/g, ' ')}</p>
+              )}
             </>
           ) : (
             <div className="py-2 text-center">
-              <div className="text-sm font-bold">Not on the green yet</div>
-              <div className="mt-1 text-[11px] text-white/50">{lie.pin}y to pin — Putt View reads within 20y.</div>
+              <div className="text-sm font-bold">{t('putt.notOnGreen')}</div>
+              <div className="mt-1 text-[11px] text-white/50">{metric ? `${Math.round(lie.pin * 0.9144)}m` : `${lie.pin}y`} · {t('putt.readsWithin')}</div>
             </div>
           )}
         </div>

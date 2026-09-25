@@ -75,6 +75,13 @@ A trigger freezes scores once a round is closed, even for privileged writers. Th
 - **Enforcement:** all of these are enforced in SQL (`can_view`, `can_see_stats`), so every read path gets the same answer.
 - **Guests:** guest data never leaves the device.
 
+## 7. Crowdsourced pin network
+Migration: `supabase/migrations/20260925010000_pin_tracking.sql`. Tests: `supabase/tests/pins.test.ts`.
+- **Write path:** reports go only through `report_pin()`. The caller must be playing an active round on that course, and the hole must be in that round.
+- **Report quality:** accuracy must be ≤ 10 m (≤ 1 m for LiDAR), and the report must be within 45 m of the green centre. Each user can report once per hole every 2 minutes.
+- **Consensus:** it counts only the newest report per user from the last 10 h. It takes the median centre, rejects outliers more than 6 m away, then averages the rest weighted by 1/σ². "Verified" needs 3+ reporters with ≤ 2.5 m spread. This matches `_shared/pins.ts`; the tests check the two agree to within 0.2 m.
+- **Reads:** raw reports (location + user) are readable only by their author. `pin_positions` (the consensus) is shared reference data and streams over Realtime.
+
 ## Deploying
 ```bash
 supabase link --project-ref <ref>

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   ChevronLeft, Search, Check, Wind, Sun, Trophy, Users, MapPin,
   Target, ChevronRight, Briefcase, Share2, QrCode, UserPlus, ScanLine,
-  MessageCircle, AtSign, Link2, UserRound
+  MessageCircle, AtSign, Link2, Settings
 } from 'lucide-react';
 import { CaddieHud } from './hud/CaddieHud';
 import { MapPlaceholder } from './hud/MapPlaceholder';
@@ -15,6 +15,8 @@ import { useBag, useRound } from './lib/hooks';
 import { useAuth, type Visibility } from './auth/AuthContext';
 import { SignIn } from './views/SignIn';
 import { ProfileView, VisibilityPicker } from './views/Profile';
+import { SettingsView } from './views/Settings';
+import { usePrefs } from './i18n/prefs';
 import { completeRemoteRound, useRoundSync } from './lib/sync';
 
 const FORMAT_HELP: Record<Format, string> = {
@@ -27,7 +29,7 @@ const FORMAT_HELP: Record<Format, string> = {
 };
 const NEEDS_PARTNER: Format[] = ['Match Play', 'Best Ball'];
 
-type View = 'menu' | 'course' | 'invite' | 'bag' | 'friends' | 'hud' | 'scorecard' | 'profile';
+type View = 'menu' | 'course' | 'invite' | 'bag' | 'friends' | 'hud' | 'scorecard' | 'profile' | 'settings';
 
 const MOCK_DATA = {
   friends: {
@@ -60,6 +62,7 @@ export default function App() {
     selectedFriends: [] as string[]
   });
   const auth = useAuth();
+  const { t, d, u } = usePrefs();
   const roundVisibility: Visibility = courseSetup.visibility ?? auth.profile.stats_visibility;
   const setupConfig: RoundConfig = { tee: courseSetup.tee, format: courseSetup.format, length: courseSetup.length };
 
@@ -120,10 +123,10 @@ export default function App() {
 
       <div className="flex flex-col gap-3 z-10 mt-auto">
         {[
-          { id: 'course', label: 'Select Course', icon: <MapPin size={14} /> },
-          { id: 'bag', label: 'My Bag', icon: <Briefcase size={14} /> },
-          { id: 'friends', label: 'Friends', icon: <Users size={14} /> },
-          { id: 'profile', label: 'Profile & Privacy', icon: <UserRound size={14} /> }
+          { id: 'course', label: t('menu.selectCourse'), icon: <MapPin size={14} /> },
+          { id: 'bag', label: t('menu.myBag'), icon: <Briefcase size={14} /> },
+          { id: 'friends', label: t('menu.friends'), icon: <Users size={14} /> },
+          { id: 'settings', label: t('menu.settings'), icon: <Settings size={14} /> }
         ].map(item => (
           <button
             key={item.id}
@@ -228,18 +231,18 @@ export default function App() {
           <button onClick={() => setCurrentView('menu')} className="h-8 w-8 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center text-white/80 hover:bg-white/10 transition-colors active:scale-95">
             <ChevronLeft size={16} />
           </button>
-          <h2 className="text-white font-bold text-xs tracking-widest uppercase">Round Setup</h2>
+          <h2 className="text-white font-bold text-xs tracking-widest uppercase">{t('setup.title')}</h2>
         </div>
 
         <div className="flex flex-col gap-5 z-10 overflow-y-auto no-scrollbar pb-24">
           
           <div className="flex flex-col gap-2">
-            <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">Course</span>
+            <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">{t('setup.course')}</span>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Search size={14} className="text-white/40" />
               </div>
-              <input type="text" placeholder="Search courses..." className="w-full bg-black/40 backdrop-blur-md border border-white/10 rounded-xl py-3 pl-9 pr-3 text-xs text-white placeholder-white/30 focus:outline-none focus:border-emerald-500/50" />
+              <input type="text" placeholder={t('setup.search')} className="w-full bg-black/40 backdrop-blur-md border border-white/10 rounded-xl py-3 pl-9 pr-3 text-xs text-white placeholder-white/30 focus:outline-none focus:border-emerald-500/50" />
             </div>
             <button className="self-start mt-1 bg-white/10 border border-white/10 rounded-full px-3 py-1.5 flex items-center gap-1.5 hover:bg-white/20 transition-colors">
               <MapPin size={10} className="text-emerald-400" />
@@ -248,14 +251,14 @@ export default function App() {
           </div>
 
           <div className="flex flex-col gap-2">
-            <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">Holes</span>
+            <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">{t('setup.holes')}</span>
             <div role="radiogroup" aria-label="Round length" className="flex gap-1 bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-1">
-              <button role="radio" aria-checked={!is9} onClick={() => setCourseSetup({ ...courseSetup, length: '18' })} className={pill(!is9)}>18 Holes</button>
-              <button role="radio" aria-checked={is9} onClick={() => setCourseSetup({ ...courseSetup, length: is9 ? courseSetup.length : 'front' })} className={pill(is9)}>9 Holes</button>
+              <button role="radio" aria-checked={!is9} onClick={() => setCourseSetup({ ...courseSetup, length: '18' })} className={pill(!is9)}>{t('setup.18')}</button>
+              <button role="radio" aria-checked={is9} onClick={() => setCourseSetup({ ...courseSetup, length: is9 ? courseSetup.length : 'front' })} className={pill(is9)}>{t('setup.9')}</button>
             </div>
             {is9 && (
               <div role="radiogroup" aria-label="Which nine" className="grid grid-cols-2 gap-2">
-                {([['front', 'Front 9', 'Holes 1–9'], ['back', 'Back 9', 'Holes 10–18']] as const).map(([id, label, sub]) => (
+                {([['front', t('setup.front'), t('setup.front.sub')], ['back', t('setup.back'), t('setup.back.sub')]] as const).map(([id, label, sub]) => (
                   <button
                     key={id}
                     role="radio"
@@ -272,20 +275,20 @@ export default function App() {
           </div>
 
           <div className="flex flex-col gap-2">
-            <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">Playing Partners</span>
+            <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">{t('setup.partners')}</span>
             <button onClick={() => setCurrentView('invite')} className="w-full bg-black/40 backdrop-blur-md border border-white/10 hover:border-emerald-500/30 rounded-xl p-3 flex items-center justify-between transition-colors">
               <div className="flex items-center gap-2">
                 <UserPlus size={16} className="text-emerald-400" />
-                <span className="text-[11px] text-white/80 font-bold uppercase tracking-wider">Invite Players</span>
+                <span className="text-[11px] text-white/80 font-bold uppercase tracking-wider">{t('setup.invite')}</span>
               </div>
               <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                {courseSetup.selectedFriends.length} Selected
+                {courseSetup.selectedFriends.length} {t('setup.selected')}
               </span>
             </button>
           </div>
 
           <div className="flex flex-col gap-2">
-            <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">Tees</span>
+            <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">{t('setup.tees')}</span>
             <div className="bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-3">
               <div className="flex items-center justify-between px-1">
                 {teeOptions.map(tee => (
@@ -297,7 +300,7 @@ export default function App() {
                     className="flex flex-col items-center gap-1.5"
                   >
                     <span className={`w-8 h-8 rounded-full transition-all ${tee.color} ${tee.border} border-2 ${courseSetup.tee === tee.id ? 'ring-2 ring-emerald-500 ring-offset-2 ring-offset-zinc-900 scale-110' : 'opacity-60'}`} />
-                    <span className={`font-mono text-[10px] ${courseSetup.tee === tee.id ? 'text-white' : 'text-white/40'}`}>{teeYards(tee.id).toLocaleString()}y</span>
+                    <span className={`font-mono text-[10px] ${courseSetup.tee === tee.id ? 'text-white' : 'text-white/40'}`}>{d(teeYards(tee.id)).toLocaleString()}{u}</span>
                   </button>
                 ))}
               </div>
@@ -309,7 +312,7 @@ export default function App() {
           </div>
 
           <div className="flex flex-col gap-2">
-            <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">Format</span>
+            <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">{t('setup.format')}</span>
             <div className="grid grid-cols-3 gap-2">
               {FORMATS.map(format => (
                 <button
@@ -336,15 +339,15 @@ export default function App() {
           </div>
 
           <div className="flex flex-col gap-2">
-            <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">Who can see this round</span>
+            <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">{t('setup.visibility')}</span>
             <VisibilityPicker label="Round visibility" value={roundVisibility} onChange={v => setCourseSetup({ ...courseSetup, visibility: v })} />
-            {auth.status !== 'signedIn' && <p className="px-1 text-[9px] text-white/40">Guest rounds stay on this device.</p>}
+            {auth.status !== 'signedIn' && <p className="px-1 text-[9px] text-white/40">{t('setup.guestLocal')}</p>}
           </div>
 
           <div className="flex items-center justify-between bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-4 mb-2">
             <div className="flex flex-col">
-              <span className="text-[11px] font-bold text-white tracking-wide uppercase">Tournament Mode</span>
-              <span className="text-[9px] text-white/50 mt-0.5">Disables slope and wind data</span>
+              <span className="text-[11px] font-bold text-white tracking-wide uppercase">{t('setup.tournament')}</span>
+              <span className="text-[9px] text-white/50 mt-0.5">{t('setup.tournament.sub')}</span>
             </div>
             <button onClick={() => setCourseSetup({...courseSetup, tournamentMode: !courseSetup.tournamentMode})} className={`w-10 h-5 rounded-full relative transition-colors ${courseSetup.tournamentMode ? 'bg-emerald-500' : 'bg-white/10 border border-white/10'}`}>
               <div className={`absolute top-[1.5px] left-[2px] w-4 h-4 bg-white rounded-full transition-transform ${courseSetup.tournamentMode ? 'translate-x-[18px]' : 'translate-x-0'}`} />
@@ -355,7 +358,7 @@ export default function App() {
         <div className="absolute bottom-6 left-5 right-5 z-20">
           <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl p-1.5 shadow-2xl">
             <button onClick={startRound} className="w-full bg-emerald-500 text-white rounded-xl py-3.5 font-bold text-xs tracking-widest uppercase hover:bg-emerald-400 active:scale-[0.98] transition-all">
-              {resuming ? `Resume Round · Hole ${round.current + 1}` : 'Start Round'}
+              {resuming ? `${t('setup.resume')} ${round.current + 1}` : t('setup.start')}
             </button>
           </div>
         </div>
@@ -559,6 +562,7 @@ export default function App() {
               setCurrentView('scorecard');
             }}
             sync={sync.status}
+            remoteRoundId={round.remoteId}
             onScorecard={() => setCurrentView('scorecard')}
             onExit={() => setCurrentView('menu')}
             buddies={liveBuddies}
@@ -576,7 +580,8 @@ export default function App() {
               {currentView === 'invite' && ViewInvite()}
               {currentView === 'bag' && <BagWizard bag={bag} gear={gear} setGear={setGear} setCarry={setCarry} resetCarry={resetCarry} onExit={() => setCurrentView('menu')} />}
               {currentView === 'friends' && ViewFriends()}
-              {currentView === 'profile' && <ProfileView onBack={() => setCurrentView('menu')} />}
+              {currentView === 'profile' && <ProfileView onBack={() => setCurrentView('settings')} />}
+              {currentView === 'settings' && <SettingsView onBack={() => setCurrentView('menu')} onProfile={() => setCurrentView('profile')} />}
               {currentView === 'scorecard' && (
                 <Scorecard
                   round={round}

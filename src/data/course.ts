@@ -64,3 +64,6 @@ export const holesFor = (tee: TeeId) => cache.get(tee) ?? (cache.set(tee, buildH
 export const COURSE = { name: 'Somerby Golf Club', holes: holesFor('black') };
 
 export const lieFor = (hole: Hole, strokes: number) => hole.lies[Math.min(strokes, hole.lies.length - 1)];
+
+/** Green centre coordinates (mock survey data; same formula seeds course_greens in SQL). */
+export const greenCenter = (holeNo: number) => ({ lat: 52.7 + holeNo * 0.0035, lng: -0.85 + ((holeNo % 3) - 1) * 0.002 });

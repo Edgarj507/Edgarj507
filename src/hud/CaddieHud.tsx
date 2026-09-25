@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
-import { ArrowDown, ArrowUp, Aperture, Check, ChevronLeft, ChevronRight, Cloud, CloudOff, Flag, Mountain, RotateCcw, Thermometer } from 'lucide-react';
+import { ArrowDown, ArrowUp, Aperture, Check, ChevronLeft, BadgeCheck, ChevronRight, Cloud, CloudOff, Flag, Users, Mountain, RotateCcw, Thermometer } from 'lucide-react';
 import { MapPlaceholder } from './MapPlaceholder';
 import { PuttView } from './PuttView';
 import { playsLike, recommendClub, windArrowDeg, type Club, type Conditions } from '../lib/caddie';
 import { lieFor, type Hole, type TeeId } from '../data/course';
+import { usePrefs } from '../i18n/prefs';
+import { usePinFeed } from '../lib/pinFeed';
+import { liveDistance } from '../../supabase/functions/_shared/pins.ts';
 import type { Format, Shot } from '../lib/round';
 import type { SyncStatus } from '../lib/sync';
 
@@ -29,7 +32,11 @@ interface Props {
   buddies?: Buddy[];
   tournamentMode?: boolean;
   sync?: SyncStatus;
+  /** Server round id, enabling the live community pin network. */
+  remoteRoundId?: string;
 }
+
+const M_TO_YD = 1.09361;
 
 const TEE_DOT: Record<TeeId, string> = { black: 'bg-zinc-900 ring-zinc-500', blue: 'bg-blue-600 ring-blue-300', white: 'bg-gray-100 ring-white', red: 'bg-red-600 ring-red-300' };
 const FORMAT_TAG: Record<Format, string> = {
@@ -40,7 +47,7 @@ const glass = 'bg-black/40 backdrop-blur-xl backdrop-saturate-150 border border-
 const scoreColor = (s: string) => (s.startsWith('-') ? 'text-red-400' : s === 'E' ? 'text-emerald-400' : 'text-white/90');
 
 export function CaddieHud({
-  hole, tee, strokes, roundScore, format, isLastHole, bag, onLog, onUndo, onNext, onScorecard, onExit, buddies = [], tournamentMode = false, sync = 'off',
+  hole, tee, strokes, roundScore, format, isLastHole, bag, onLog, onUndo, onNext, onScorecard, onExit, buddies = [], tournamentMode = false, sync = 'off', remoteRoundId,
 }: Props) {
   const [justLogged, setJustLogged] = useState(false);
   const [puttView, setPuttView] = useState(false);
@@ -51,18 +58,35 @@ export function CaddieHud({
     return () => clearTimeout(id);
   }, [justLogged]);
 
+  const { t, d, u, units, communityPins } = usePrefs();
   const lie = lieFor(hole, strokes);
   const conditions: Conditions = { ...WEATHER, elevationDeltaYds: lie.elev };
 
-  const calc = playsLike(lie.line, hole.bearingDeg, conditions);
-  const target = tournamentMode ? lie.line : calc.yards;
+  // Static course data measures to the green centre; the community pin shifts it along/across
+  // the line of play. When the shot is aimed at the flag, the aim line moves with it.
+  const pins = usePinFeed({ holeNo: hole.number, bearingDeg: hole.bearingDeg, enabled: communityPins, remoteRoundId });
+  const pinYds = Math.max(1, Math.round(liveDistance(lie.pin, pins.depthM * M_TO_YD, pins.lateralM * M_TO_YD)));
+  const lineYds = lie.line === lie.pin ? pinYds : lie.line;
+  const pinNote = (() => {
+    const k = units === 'meters' ? 1 : M_TO_YD;
+    const unit = units === 'meters' ? 'm' : 'yd';
+    const parts: string[] = [];
+    const dep = Math.round(Math.abs(pins.depthM) * k);
+    const lat = Math.round(Math.abs(pins.lateralM) * k);
+    if (dep >= 1) parts.push(`${dep}${unit} ${t(pins.depthM < 0 ? 'hud.front' : 'hud.back')}`);
+    if (lat >= 1) parts.push(`${lat}${unit} ${t(pins.lateralM < 0 ? 'hud.left' : 'hud.right')}`);
+    return parts.length ? parts : [t('hud.centre')];
+  })();
+
+  const calc = playsLike(lineYds, hole.bearingDeg, conditions);
+  const target = tournamentMode ? lineYds : calc.yards;
   // Putter only once within 20y; otherwise recommend from full-swing clubs.
   const club = lie.pin <= 20 ? bag.find((c) => c.carry === 0) ?? recommendClub(target, bag) : recommendClub(target, bag.filter((c) => c.carry > 0));
   const arrowDeg = windArrowDeg(WEATHER.windFromDeg, hole.bearingDeg);
 
   const logShot = () => {
     if (justLogged || !club) return;
-    onLog({ club: club.label, line: lie.line, playsLike: target, t: Date.now() });
+    onLog({ club: club.label, line: lineYds, playsLike: target, t: Date.now() });
     setJustLogged(true);
     navigator.vibrate?.(15);
   };
@@ -94,21 +118,21 @@ export function CaddieHud({
             className={`${glass} flex items-stretch gap-3 rounded-2xl px-3 py-2 text-left transition active:scale-[0.98]`}
           >
             <div className="flex flex-col justify-between">
-              <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/50">Hole</span>
+              <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/50">{t('hud.hole')}</span>
               <span className="font-mono text-3xl font-semibold leading-none tabular-nums">{hole.number}</span>
               <span className="mt-1 flex items-center gap-1 font-mono text-[10px] text-white/50">
                 <span className={`h-2 w-2 rounded-full ring-1 ${TEE_DOT[tee]}`} />
-                {hole.yards}y
+                {d(hole.yards)}{u}
               </span>
             </div>
             <span className="w-px bg-white/15" />
             <dl className="flex flex-col justify-center gap-1 whitespace-nowrap text-[11px] font-semibold uppercase tracking-wider">
               <div className="flex justify-between gap-3">
-                <dt className="text-white/50">Par</dt>
+                <dt className="text-white/50">{t('hud.par')}</dt>
                 <dd className="font-mono tabular-nums">{hole.par}</dd>
               </div>
               <div className="flex justify-between gap-3 text-emerald-400">
-                <dt>Strokes</dt>
+                <dt>{t('hud.strokes')}</dt>
                 <dd className="font-mono tabular-nums">{strokes}</dd>
               </div>
               <div className="flex justify-between gap-3 text-[9px] text-white/40">
@@ -125,7 +149,7 @@ export function CaddieHud({
         </div>
 
         {/* Top-right: weather → elevation → distance to pin */}
-        <div className="pointer-events-auto flex shrink-0 flex-col items-end gap-1.5">
+        <div className="pointer-events-auto flex min-w-0 max-w-[7.5rem] shrink-0 flex-col items-end gap-1.5">
           <div className={`${glass} flex flex-col gap-1.5 rounded-2xl px-3 py-2`}>
             <span className="flex items-center justify-end gap-1.5 font-mono text-sm font-semibold leading-none tabular-nums">
               <Thermometer size={12} className="text-amber-300" />
@@ -148,20 +172,38 @@ export function CaddieHud({
                 ? <ArrowUp size={11} className="text-rose-300" />
                 : <ArrowDown size={11} className="text-sky-300" />)}
               <span className="font-mono text-xs font-semibold leading-none tabular-nums">
-                {Math.abs(lie.elev)}<span className="text-white/50">y</span>
+                {d(Math.abs(lie.elev))}<span className="text-white/50">{u}</span>
               </span>
               <span className="text-[9px] font-bold uppercase leading-none tracking-wider text-white/50">
-                {lie.elev > 0 ? 'Up' : lie.elev < 0 ? 'Down' : 'Flat'}
+                {t(lie.elev > 0 ? 'hud.up' : lie.elev < 0 ? 'hud.down' : 'hud.flat')}
               </span>
             </div>
           )}
 
-          <div className={`${glass} flex items-center gap-1.5 rounded-xl px-2.5 py-1.5`}>
-            <Flag size={12} className="text-red-400" />
-            <span className="font-mono text-xs font-semibold leading-none tabular-nums">
-              {lie.pin}<span className="text-white/50">y</span>
+          <div
+            className={`${glass} flex flex-col items-end gap-1 rounded-xl px-2.5 py-1.5`}
+            aria-label={`${t('hud.pin')} ${d(pinYds)}${u}. ${pins.live ? `${t('hud.communityPin')}: ${pinNote.join(', ')}, ${pins.live.reports} ${t('hud.reports')}` : t('hud.defaultPin')}`}
+          >
+            <span className="flex items-center gap-1.5">
+              <Flag size={12} className="text-red-400" />
+              <span className="font-mono text-xs font-semibold leading-none tabular-nums">
+                {d(pinYds)}<span className="text-white/50">{u}</span>
+              </span>
+              <span className="text-[9px] font-bold uppercase leading-none tracking-wider text-white/50">{t('hud.pin')}</span>
             </span>
-            <span className="text-[9px] font-bold uppercase leading-none tracking-wider text-white/50">Pin</span>
+            {pins.live && (
+              <span className="flex items-start gap-1 text-[8px] font-semibold leading-tight text-emerald-300/80" title={`${t('hud.communityPin')} · ${pins.live.reports} ${t('hud.reports')}`}>
+                <span className="relative mt-[3px] flex h-1.5 w-1.5 shrink-0">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/60" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                </span>
+                <Users size={9} className="mt-px shrink-0" />
+                <span className="flex flex-col items-end">
+                  {pinNote.map((part) => <span key={part} className="whitespace-nowrap">{part}</span>)}
+                </span>
+                {pins.live.status === 'verified' && <BadgeCheck size={9} className="mt-px shrink-0 text-emerald-400" />}
+              </span>
+            )}
           </div>
         </div>
       </header>
@@ -185,7 +227,7 @@ export function CaddieHud({
               className="pointer-events-auto flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-emerald-500/40 bg-black/50 px-3.5 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.25)] backdrop-blur-xl transition active:scale-95"
             >
               <Aperture size={14} />
-              <span className="text-[10px] font-black uppercase tracking-widest">Putt View</span>
+              <span className="text-[10px] font-black uppercase tracking-widest">{t('hud.puttView')}</span>
             </button>
           </div>
 
@@ -195,10 +237,10 @@ export function CaddieHud({
           >
             {/* Line · Plays Like · Club */}
             <div className="grid grid-cols-3 divide-x divide-white/10 px-1 pb-2.5 pt-1">
-              <Stat label="Line" value={lie.line} />
-              <Stat label="Plays Like" value={tournamentMode ? '—' : target} accent />
+              <Stat label={t('hud.line')} value={d(lineYds)} unit={u} />
+              <Stat label={t('hud.playsLike')} value={tournamentMode ? '—' : d(target)} unit={u} accent />
               <div className="flex flex-col items-center">
-                <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/50">Club</span>
+                <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/50">{t('hud.club')}</span>
                 <span className="text-2xl font-black leading-tight tracking-tight">{club ? club.label.replace(/^(\S+) [\d.]+°$/, '$1') : '—'}</span>
               </div>
             </div>
@@ -222,13 +264,13 @@ export function CaddieHud({
                     : 'bg-emerald-500 text-black shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:bg-emerald-400'
                 }`}
               >
-                {justLogged ? (<><Check size={16} strokeWidth={3} /> Logged</>) : 'Log Shot'}
+                {justLogged ? (<><Check size={16} strokeWidth={3} /> {t('hud.logged')}</>) : t('hud.logShot')}
               </button>
               <button
                 onClick={onNext}
                 className="flex h-11 shrink-0 items-center gap-0.5 rounded-2xl border border-white/10 bg-white/10 pl-3 pr-2 text-[10px] font-black uppercase tracking-widest text-white transition active:scale-95"
               >
-                {isLastHole ? 'Finish' : 'Next'}
+                {t(isLastHole ? 'hud.finish' : 'hud.next')}
                 <ChevronRight size={14} />
               </button>
             </div>
@@ -236,18 +278,20 @@ export function CaddieHud({
         </div>
       </div>
 
-      {puttView && <PuttView lie={lie} holeNumber={hole.number} onClose={() => setPuttView(false)} />}
+      {puttView && (
+        <PuttView lie={{ ...lie, pin: pinYds }} holeNumber={hole.number} onClose={() => setPuttView(false)} onConfirmCup={pins.report} />
+      )}
     </div>
   );
 }
 
-function Stat({ label, value, accent = false }: { label: string; value: number | string; accent?: boolean }) {
+function Stat({ label, value, unit, accent = false }: { label: string; value: number | string; unit: string; accent?: boolean }) {
   return (
     <div className="flex flex-col items-center">
       <span className={`text-[9px] font-bold uppercase tracking-[0.18em] ${accent ? 'text-emerald-400/80' : 'text-white/50'}`}>{label}</span>
       <span className={`font-mono text-2xl leading-tight tabular-nums ${accent ? 'font-semibold text-emerald-400' : 'font-light'}`}>
         {value}
-        {typeof value === 'number' && <span className={`ml-0.5 text-xs ${accent ? 'text-emerald-400/50' : 'text-white/40'}`}>y</span>}
+        {typeof value === 'number' && <span className={`ml-0.5 text-xs ${accent ? 'text-emerald-400/50' : 'text-white/40'}`}>{unit}</span>}
       </span>
     </div>
   );

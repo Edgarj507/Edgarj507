@@ -2,6 +2,7 @@ import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { Check, ChevronLeft, Minus, Plus, RotateCcw, Search, X } from 'lucide-react';
 import { BRANDS, CATEGORIES, EQUIPMENT, modelId, optionId, type Brand, type Category, type Model } from '../data/equipment';
 import type { BagClub, GearSelection } from '../lib/bag';
+import { usePrefs } from '../i18n/prefs';
 
 const toggle = <T,>(list: T[], item: T) => (list.includes(item) ? list.filter((i) => i !== item) : [...list, item]);
 
@@ -19,6 +20,7 @@ const on = 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400';
 const off = 'bg-black/40 border-white/10 text-white/80 hover:bg-white/5';
 
 export function BagWizard({ bag, gear: sel, setGear: setSel, setCarry, resetCarry, onExit }: Props) {
+  const { d, u } = usePrefs();
   const [step, setStep] = useState(1);
   const [category, setCategory] = useState<Category | 'All'>('All');
   const [query, setQuery] = useState('');
@@ -230,7 +232,7 @@ export function BagWizard({ bag, gear: sel, setGear: setSel, setCarry, resetCarr
                         ? <span className="text-[8px] font-bold uppercase text-amber-300/80">est</span>
                         : <button onClick={() => resetCarry(club.key)} aria-label={`Reset ${club.label} carry`} className="text-white/30"><RotateCcw size={10} /></button>}
                       <button onClick={() => setCarry(club.key, club.carry - 5)} aria-label={`Decrease ${club.label} carry`} className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white/70 active:scale-90"><Minus size={12} /></button>
-                      <span className="w-12 text-center font-mono text-xs text-emerald-400">{club.carry}y</span>
+                      <span className="w-12 text-center font-mono text-xs text-emerald-400">{d(club.carry)}{u}</span>
                       <button onClick={() => setCarry(club.key, club.carry + 5)} aria-label={`Increase ${club.label} carry`} className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white/70 active:scale-90"><Plus size={12} /></button>
                     </div>
                   )}
