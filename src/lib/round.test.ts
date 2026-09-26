@@ -113,4 +113,14 @@ describe('mulligan ledger', () => {
     expect(mulligansLeft(s.ledger!, 'f1')).toBe(1);
     expect(isRoundState(s)).toBe(true);
   });
+  it('opens a ledger when mulligans are bought mid-round', () => {
+    let s = roundReducer(newRound(), { type: 'start', config: cfg });
+    expect(s.ledger).toBeUndefined();
+    s = roundReducer(s, { type: 'buyMulligans', player: 'me', qty: 2, price: 10 });
+    expect(s.ledger).toEqual({ price: 10, packs: { me: 2 }, used: [] });
+    s = roundReducer(s, { type: 'buyMulligans', player: 'me', qty: 1, price: 10 });
+    expect(s.ledger!.packs.me).toBe(3);
+    expect(roundReducer(s, { type: 'buyMulligans', player: 'me', qty: 0, price: 10 })).toBe(s);
+    expect(isRoundState(s)).toBe(true);
+  });
 });

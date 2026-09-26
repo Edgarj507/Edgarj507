@@ -1,13 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { LngLatBounds, Map as MapLibre, Marker, setWorkerUrl, type GeoJSONSource, type LngLat } from 'maplibre-gl';
-import 'maplibre-gl/dist/maplibre-gl.css';
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import { LngLatBounds, Map as MapLibre, Marker, type GeoJSONSource, type LngLat } from './maplibre';
 import { LocateFixed } from 'lucide-react';
 import { distanceM, type LatLng } from '../../supabase/functions/_shared/pins.ts';
 import type { ImageryProvider } from './providers';
 import type { FeatureCollection } from 'geojson';
-
-setWorkerUrl(workerUrl);
 
 export interface SatelliteMapProps {
   provider: ImageryProvider;

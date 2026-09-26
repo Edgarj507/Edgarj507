@@ -1,5 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, Aperture, Check, ChevronLeft, BadgeCheck, ChevronRight, Cloud, CloudOff, Flag, HandCoins, Users, RotateCcw, ShieldHalf, Volume2, VolumeX } from 'lucide-react';
+import { lazy, Suspense, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { ArrowDown, ArrowUp, Aperture, Car, Check, ChevronLeft, BadgeCheck, ChevronRight, Cloud, CloudOff, Flag, HandCoins, HeartHandshake, ShoppingBag, Users, RotateCcw, ShieldHalf, Volume2, VolumeX } from 'lucide-react';
 import { MapPlaceholder } from './MapPlaceholder';
 import { imageryProvider } from '../map/providers';
 import { aimPosition, ballPosition, holeGeometry, shotBearing } from '../map/geometry';
@@ -16,6 +16,10 @@ import { bearingDeg, distanceM, liveDistance } from '../../supabase/functions/_s
 import { mulligansLeft, type Format, type MulliganLedger, type Outcome, type Shot } from '../lib/round';
 import { ShotModal } from './ShotModal';
 import { MulliganSheet } from './MulliganSheet';
+import { StoreSheet } from './StoreSheet';
+import { useOps, newId } from '../ops/useOps';
+import { mulligansBought, type OrderItem } from '../ops/model';
+import { MULLIGAN } from '../ops/menu';
 import { caddiePhrase, speak, speechAvailable } from '../lib/voiceCaddie';
 import type { ClubStats } from '../lib/hooks';
 import type { SyncStatus } from '../lib/sync';
@@ -53,6 +57,10 @@ interface Props {
   ledger?: MulliganLedger;
   onMulligan?: (player: string) => void;
   onUnmulligan?: (index: number) => void;
+  /** Name shown to the clubhouse on orders and hails. */
+  playerName?: string;
+  /** Charity/Event Store purchase: adds mulligans to this round's ledger. */
+  onBuyMulligans?: (qty: number, price: number) => void;
 }
 
 const M_TO_YD = 1.09361;
@@ -67,13 +75,16 @@ const scoreColor = (s: string) => (s.startsWith('-') ? 'text-red-400' : s === 'E
 
 export function CaddieHud({
   hole, tee, strokes, roundScore, format, isLastHole, bag, onLog, onUndo, onNext, onScorecard, onExit, buddies = [], tournamentMode = false, sync = 'off', remoteRoundId, courseName, courseAttribution,
-  holeLines, clubStats = {}, ledger, onMulligan, onUnmulligan,
+  holeLines, clubStats = {}, ledger, onMulligan, onUnmulligan, playerName = 'Guest', onBuyMulligans,
 }: Props) {
   const [justLogged, setJustLogged] = useState(false);
   const [puttView, setPuttView] = useState(false);
   const [picking, setPicking] = useState(false);
   const [mullOpen, setMullOpen] = useState(false);
   const [ballBy, setBallBy] = useState('me');
+  const [store, setStore] = useState<'store' | 'charity' | null>(null);
+  const [ops, opsDispatch] = useOps('player');
+  const [hailed, setHailed] = useState(false);
 
   useEffect(() => {
     if (!justLogged) return;
@@ -151,6 +162,30 @@ export function CaddieHud({
     if (next) speak(phrase, lang);
     else if (speechAvailable()) window.speechSynthesis.cancel();
   };
+
+  // On-course commerce: every order/hail is tagged with the hole and the ball's GPS position.
+  const placeOrder = (items: OrderItem[], kind: 'order' | 'hail' = 'order') =>
+    opsDispatch({ type: 'order', order: { id: newId(), kind, createdAt: Date.now(), player: playerName, hole: hole.number, lat: ball.lat, lng: ball.lng, items, total: items.reduce((a, i) => a + i.price * i.qty, 0), status: 'new' } });
+  const onStorePlace = (items: OrderItem[]) => {
+    placeOrder(items);
+    const mulls = items.filter((i) => i.sku === MULLIGAN.sku).reduce((a, i) => a + i.qty, 0);
+    if (mulls) onBuyMulligans?.(mulls, MULLIGAN.price);
+  };
+  const hail = () => {
+    if (!ops.settings.hailCart) return;
+    placeOrder([], 'hail');
+    setHailed(true);
+    navigator.vibrate?.(20);
+  };
+  useEffect(() => {
+    if (!hailed) return;
+    const id = setTimeout(() => setHailed(false), 2500);
+    return () => clearTimeout(id);
+  }, [hailed]);
+  // Surface the order that's moving first (en route beats received).
+  const mine = ops.orders.filter((o) => o.player === playerName && o.status !== 'delivered');
+  const myActive = mine.find((o) => o.status === 'enroute') ?? mine[0];
+  const myMulls = mulligansBought(ops.orders, playerName, Date.now());
 
   const mullLeft = ledger ? players.reduce((a, p) => a + Math.max(0, mulligansLeft(ledger, p.id)), 0) : 0;
 
@@ -303,6 +338,19 @@ export function CaddieHud({
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 pb-safe pl-safe pr-safe">
         <div className="mx-auto flex w-full max-w-sm flex-col gap-2">
           <div className="flex items-end justify-between gap-2 short:hidden">
+            {myActive ? (
+              <span role="status" className={`${glass} flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold ${myActive.status === 'enroute' ? 'text-emerald-300' : 'text-white/70'}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${myActive.status === 'enroute' ? 'animate-pulse bg-emerald-400' : 'bg-amber-300'}`} />
+                {myActive.kind === 'hail' ? 'Cart' : 'Order'} · {myActive.status === 'enroute' ? 'En route' : 'Received'}
+              </span>
+            ) : <span />}
+            <div className="pointer-events-auto flex flex-col gap-1.5" aria-label="Course services">
+              <FloatBtn label="Clubhouse Store" onClick={() => setStore('store')} disabled={!ops.settings.liveOrdering}><ShoppingBag size={15} /></FloatBtn>
+              <FloatBtn label={hailed ? 'Cart hailed' : 'Hail Cart'} onClick={hail} disabled={!ops.settings.hailCart} active={hailed}><Car size={15} /></FloatBtn>
+              <FloatBtn label="Charity Store" onClick={() => setStore('charity')} tone="amber"><HeartHandshake size={15} /></FloatBtn>
+            </div>
+          </div>
+          <div className="flex items-end justify-between gap-2 short:hidden">
             {buddies.length > 0 ? (
               <div className={`${glass} pointer-events-auto flex gap-3 overflow-x-auto no-scrollbar rounded-full px-3 py-1.5`}>
                 {buddies.map((b) => (
@@ -387,6 +435,9 @@ export function CaddieHud({
       {mullOpen && ledger && onMulligan && onUnmulligan && (
         <MulliganSheet ledger={ledger} players={players} onUse={onMulligan} onUndo={onUnmulligan} onClose={() => setMullOpen(false)} />
       )}
+      {store && (
+        <StoreSheet mode={store} settings={ops.settings} hole={hole.number} mulligansBought={myMulls} onPlace={onStorePlace} onClose={() => setStore(null)} />
+      )}
       {puttView && (
         <PuttView lie={{ ...lie, pin: pinYds }} holeNumber={hole.number} onClose={() => setPuttView(false)} onConfirmCup={pins.report} />
       )}
@@ -403,5 +454,19 @@ function Stat({ label, value, unit, accent = false }: { label: string; value: nu
         {typeof value === 'number' && <span className={`ml-0.5 text-xs ${accent ? 'text-emerald-400/50' : 'text-white/40'}`}>{unit}</span>}
       </span>
     </div>
+  );
+}
+
+function FloatBtn({ children, label, onClick, disabled, active, tone = 'white' }: { children: ReactNode; label: string; onClick: () => void; disabled?: boolean; active?: boolean; tone?: 'white' | 'amber' }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={disabled ? `${label} · paused by clubhouse` : label}
+      className={`${glass} grid h-10 w-10 place-items-center rounded-full transition active:scale-95 disabled:opacity-30 ${active ? 'text-emerald-300 ring-1 ring-emerald-400/70 shadow-[0_0_14px_rgba(16,185,129,0.45)]' : tone === 'amber' ? 'text-amber-300' : 'text-white/80'}`}
+    >
+      {children}
+    </button>
   );
 }

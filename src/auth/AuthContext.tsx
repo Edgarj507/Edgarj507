@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import type { Provider, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { EMAIL_RE, passwordProblem, sanitizeText, normalizeHandle } from '../../supabase/functions/_shared/validation.ts';
+import { normalizePhone } from '../lib/sms';
 
 export type Visibility = 'public' | 'friends' | 'private';
 
@@ -24,6 +25,11 @@ interface AuthValue {
   signUp: (email: string, password: string, handle: string) => Promise<string | null>;
   signInWithProvider: (p: Extract<Provider, 'google' | 'apple'>) => Promise<string | null>;
   continueAsGuest: () => void;
+  /** Phone login. Cloud: sends an SMS code (returns 'code_sent'). Demo: signs in locally on this device. */
+  signInWithPhone: (phone: string, displayName?: string) => Promise<string | null>;
+  verifyPhoneCode: (phone: string, code: string) => Promise<string | null>;
+  /** Phone number of the signed-in player (E.164), when known. */
+  phone: string | null;
   signOut: () => Promise<void>;
   saveProfile: (p: Partial<Profile>) => Promise<string | null>;
 }
@@ -32,6 +38,7 @@ const GUEST_PROFILE: Profile = {
   handle: 'guest', display_name: 'Guest', handicap: null, handicap_visibility: 'private', stats_visibility: 'private',
 };
 const GUEST_KEY = 'eg.guest.profile.v1';
+const PHONE_KEY = 'eg.player.phone.v1';
 
 const Ctx = createContext<AuthValue | null>(null);
 
@@ -45,6 +52,7 @@ const friendly = (msg: string) =>
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>(supabase ? 'loading' : 'signedOut');
   const [user, setUser] = useState<User | null>(null);
+  const [phone, setPhone] = useState<string | null>(() => { try { return localStorage.getItem(PHONE_KEY); } catch { return null; } });
   const [profile, setProfile] = useState<Profile>(() => {
     try { return { ...GUEST_PROFILE, ...JSON.parse(localStorage.getItem(GUEST_KEY) ?? '{}') }; } catch { return GUEST_PROFILE; }
   });
@@ -107,6 +115,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     continueAsGuest() {
       setStatus('guest');
     },
+    phone: user?.phone ? `+${user.phone.replace(/^\+/, '')}` : phone,
+    async signInWithPhone(raw, displayName) {
+      const e164 = normalizePhone(raw);
+      if (!e164) return 'Enter a valid mobile number.';
+      if (supabase) {
+        const { error } = await supabase.auth.signInWithOtp({ phone: e164 });
+        return error ? friendly(error.message) : 'code_sent';
+      }
+      // Demo mode (no backend): a local player profile keyed to this phone. No verification.
+      try { localStorage.setItem(PHONE_KEY, e164); } catch { /* blocked */ }
+      setPhone(e164);
+      if (displayName) {
+        const next = { ...profile, display_name: sanitizeText(displayName, 40) || profile.display_name, handicap_visibility: 'friends' as const, stats_visibility: 'friends' as const };
+        setProfile(next);
+        try { localStorage.setItem(GUEST_KEY, JSON.stringify(next)); } catch { /* blocked */ }
+      }
+      setStatus('guest');
+      return null;
+    },
+    async verifyPhoneCode(raw, code) {
+      const e164 = normalizePhone(raw);
+      if (!supabase || !e164) return 'Phone sign-in is not configured.';
+      if (!/^\d{6}$/.test(code)) return 'Enter the 6-digit code.';
+      const { error } = await supabase.auth.verifyOtp({ phone: e164, token: code, type: 'sms' });
+      return error ? 'That code didn’t work. Try again.' : null;
+    },
     async signOut() {
       await supabase?.auth.signOut();
       setUser(null);
@@ -133,7 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(next);
       return null;
     },
-  }), [status, user, profile]);
+  }), [status, user, profile, phone]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

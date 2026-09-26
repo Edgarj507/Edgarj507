@@ -82,6 +82,27 @@ Migration: `supabase/migrations/20260925010000_pin_tracking.sql`. Tests: `supaba
 - **Consensus:** it counts only the newest report per user from the last 10 h. It takes the median centre, rejects outliers more than 6 m away, then averages the rest weighted by 1/σ². "Verified" needs 3+ reporters with ≤ 2.5 m spread. This matches `_shared/pins.ts`; the tests check the two agree to within 0.2 m.
 - **Reads:** raw reports (location + user) are readable only by their author. `pin_positions` (the consensus) is shared reference data and streams over Realtime.
 
+## 8. Roles: Player App vs Clubhouse OS (B2B2C RBAC)
+
+| | Player | Staff (Clubhouse OS) |
+|---|---|---|
+| Sign-in | Phone (SMS OTP in cloud mode), email or guest; Face ID quick-login on enrolled devices | Staff PIN (6 digits) or Face ID on an authorised tablet |
+| Tee sheet, rosters, contacts | Own registrations only | Full course (`reg_read` → `is_staff()`) |
+| Master toggles (Hail Drink Cart, Live Ordering, mulligan limit) | Read only | Update (`settings_staff`) |
+| Orders | Create own; read own | Read course queue; move status only (`orders_staff_update`, column grant on `status`) |
+
+- **Server enforcement** (`supabase/migrations/20260927000000_clubhouse.sql`): staff rights come only from `staff_members` rows, which clients can't write (select-own policy only, no insert/update grants). Every table is behind RLS.
+- **Server-side pricing**: `price_order()` recomputes totals from `menu_items`, rejects unknown SKUs and bad quantities, applies the master toggles (`ordering_off`, `hail_cart_off`) and caps charity mulligans per player per 18h (`mulligan_limit`). A client-sent total is ignored. Charity-only orders are recorded as delivered.
+- **Verified rosters**: `valid_roster()` requires exactly three players, each with a name, an E.164 phone and an email, with no markup. Registrations are inserted unpaid; only the payment webhook (service role) marks them paid.
+- **UI switch**: `RoleProvider` renders *either* the Player App or the Clubhouse OS. A player session never mounts staff views. The staff session lives in memory only: a reload locks it, and it auto-locks after 15 minutes idle.
+- **Staff PIN**: PBKDF2-SHA-256 with 150k iterations and a random salt. Comparison is constant-time. Five failures lock it for 5 minutes.
+- **Face ID**: WebAuthn platform authenticator with the user-verification flag checked. In this build it is a *local* gate (unlock and purchase confirmation). For server-trusted biometric login, verify the assertion server-side (e.g. SimpleWebAuthn in an edge function) against the stored public key.
+
+**Demo-mode caveats**: without `VITE_SUPABASE_URL`, several things are local-only:
+- Ops data (orders, settings, registrations) lives in `localStorage` and is synced across tabs with BroadcastChannel. The role check in `opsReducer` mirrors RLS, but anything on the device is user-editable, so production must use the cloud tables.
+- The staff PIN is per-device.
+- Payments are simulated and no receipt email is sent.
+
 ## Deploying
 ```bash
 supabase link --project-ref <ref>

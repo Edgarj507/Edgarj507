@@ -59,6 +59,8 @@ export type RoundAction =
   | { type: 'start'; config: RoundConfig; ledger?: MulliganLedger }
   | { type: 'mulligan'; player: string }
   | { type: 'unmulligan'; index: number }
+  /** Charity mulligans bought mid-round (Event Store); opens a ledger if the round has none. */
+  | { type: 'buyMulligans'; player: string; qty: number; price: number }
   | { type: 'hydrate'; state: RoundState }
   | { type: 'attachRemote'; id: string };
 
@@ -120,6 +122,11 @@ export function roundReducer(s: RoundState, a: RoundAction): RoundState {
       return { ...s, ledger: { ...s.ledger, used: [...s.ledger.used, { player: a.player, hole: s.current + 1, t: Date.now() }] } };
     case 'unmulligan':
       return s.ledger ? { ...s, ledger: { ...s.ledger, used: s.ledger.used.filter((_, i) => i !== a.index) } } : s;
+    case 'buyMulligans': {
+      if (!Number.isInteger(a.qty) || a.qty < 1) return s;
+      const l = s.ledger ?? { price: a.price, packs: {}, used: [] };
+      return { ...s, ledger: { ...l, packs: { ...l.packs, [a.player]: (l.packs[a.player] ?? 0) + a.qty } } };
+    }
     case 'hydrate':
       return a.state;
     case 'attachRemote':

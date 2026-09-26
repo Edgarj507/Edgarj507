@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   ChevronLeft, Search, Check, Wind, Sun, Trophy, Users, MapPin,
   Target, ChevronRight, Briefcase, Share2, QrCode, UserPlus, ScanLine,
-  MessageCircle, AtSign, Link2, Settings
+  MessageCircle, AtSign, Link2, Settings, Trophy as TrophyIcon, Lock
 } from 'lucide-react';
 import { CaddieHud } from './hud/CaddieHud';
 import { MapPlaceholder } from './hud/MapPlaceholder';
@@ -22,6 +22,10 @@ import { ProfileView, VisibilityPicker } from './views/Profile';
 import { SettingsView } from './views/Settings';
 import { usePrefs } from './i18n/prefs';
 import { completeRemoteRound, useRoundSync } from './lib/sync';
+import { useRole } from './auth/RoleContext';
+import { ClubhouseOS } from './clubhouse/ClubhouseOS';
+import { StaffPortal } from './views/StaffPortal';
+import { Tournaments } from './tournaments/Tournaments';
 
 const FORMAT_HELP: Record<Format, string> = {
   'Stroke Play': 'Every stroke counts. Total vs par.',
@@ -33,7 +37,7 @@ const FORMAT_HELP: Record<Format, string> = {
 };
 const NEEDS_PARTNER: Format[] = ['Match Play', 'Best Ball'];
 
-type View = 'menu' | 'course' | 'courses' | 'invite' | 'bag' | 'friends' | 'hud' | 'scorecard' | 'recap' | 'profile' | 'settings';
+type View = 'menu' | 'tournaments' | 'course' | 'courses' | 'invite' | 'bag' | 'friends' | 'hud' | 'scorecard' | 'recap' | 'profile' | 'settings';
 
 const MOCK_DATA = {
   friends: {
@@ -71,6 +75,8 @@ export default function App() {
     mulliganPrice: 10,
   });
   const auth = useAuth();
+  const { role } = useRole();
+  const [staffGate, setStaffGate] = useState(false);
   const { t, d, u } = usePrefs();
   const roundVisibility: Visibility = courseSetup.visibility ?? auth.profile.stats_visibility;
   const setupModel = lib.get(courseSetup.courseId || lib.homeIds.find(id => lib.has(id) && lib.get(id).playable) || SOMERBY.id);
@@ -143,6 +149,7 @@ export default function App() {
       <div className="flex flex-col gap-3 z-10 mt-auto">
         {[
           { id: 'course', label: t('menu.selectCourse'), icon: <MapPin size={14} /> },
+          { id: 'tournaments', label: t('menu.tournaments'), icon: <TrophyIcon size={14} /> },
           { id: 'bag', label: t('menu.myBag'), icon: <Briefcase size={14} /> },
           { id: 'friends', label: t('menu.friends'), icon: <Users size={14} /> },
           { id: 'settings', label: t('menu.settings'), icon: <Settings size={14} /> }
@@ -161,6 +168,9 @@ export default function App() {
             <ChevronRight size={16} className="text-white/30" />
           </button>
         ))}
+        <button onClick={() => setStaffGate(true)} className="mx-auto -mb-3 mt-1 flex items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.25em] text-white/25 hover:text-white/50">
+          <Lock size={9} /> Staff Login
+        </button>
       </div>
     </div>
   );
@@ -609,6 +619,19 @@ export default function App() {
 
   const gated = auth.status === 'loading' || auth.status === 'signedOut';
 
+  // Top-level RBAC switch: a staff session renders only the landscape Clubhouse OS; the player app
+  // (and its data) is not mounted, and players never mount the Clubhouse OS.
+  if (role === 'staff') {
+    return (
+      <div className="h-dvh w-full bg-black font-sans desktop:flex desktop:items-center desktop:justify-center desktop:bg-zinc-950 desktop:p-4">
+        <div className="relative h-full w-full overflow-hidden bg-zinc-950 desktop:aspect-[4/3] desktop:h-auto desktop:max-h-[calc(100dvh-2rem)] desktop:w-[min(1280px,calc(100vw-2rem),calc((100dvh-2rem)*4/3))] desktop:rounded-[2rem] desktop:border-[10px] desktop:border-zinc-900 desktop:shadow-[0_0_50px_rgba(0,0,0,0.5)]">
+          <ClubhouseOS />
+        </div>
+      </div>
+    );
+  }
+  const captainName = (auth.profile.display_name && auth.profile.display_name !== 'Guest' ? auth.profile.display_name : 'Edgar Chavira Rios').split(' ');
+
   return (
     <div className="h-dvh w-full bg-black font-sans selection:bg-emerald-500/30 desktop:flex desktop:items-center desktop:justify-center desktop:bg-zinc-950 desktop:p-4">
       <div className="relative h-full w-full overflow-hidden bg-black desktop:aspect-[9/16] desktop:h-[min(860px,calc(100dvh-2rem))] desktop:w-auto desktop:rounded-[3rem] desktop:border-[8px] desktop:border-zinc-900 desktop:shadow-[0_0_50px_rgba(0,0,0,0.5)]">
@@ -654,6 +677,8 @@ export default function App() {
             onExit={() => setCurrentView('menu')}
             buddies={liveBuddies}
             tournamentMode={courseSetup.tournamentMode}
+            playerName={auth.profile.display_name}
+            onBuyMulligans={(qty, price) => dispatch({ type: 'buyMulligans', player: 'me', qty, price })}
           />
         ) : (
           <>
@@ -663,6 +688,12 @@ export default function App() {
             </div>
             <div className="relative z-20 h-full w-full p-safe-inset">
               {currentView === 'menu' && ViewMenu()}
+              {currentView === 'tournaments' && (
+                <Tournaments
+                  captain={{ first: captainName[0], last: captainName.slice(1).join(' '), phone: auth.phone ?? '', email: auth.user?.email ?? '' }}
+                  onBack={() => setCurrentView('menu')}
+                />
+              )}
               {currentView === 'course' && ViewCourse()}
               {currentView === 'invite' && ViewInvite()}
               {currentView === 'bag' && <BagWizard bag={bag} gear={gear} setGear={setGear} setCarry={setCarry} resetCarry={resetCarry} onExit={() => setCurrentView('menu')} />}
@@ -716,6 +747,7 @@ export default function App() {
             </div>
           </>
         )}
+        {staffGate && <StaffPortal onClose={() => setStaffGate(false)} />}
       </div>
     </div>
   );

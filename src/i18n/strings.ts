@@ -1,7 +1,7 @@
 /** UI strings. English is the source of truth and the fallback for any missing key. */
 const en = {
   // menu
-  'menu.selectCourse': 'Select Course', 'menu.myBag': 'My Bag', 'menu.friends': 'Friends', 'menu.settings': 'Settings',
+  'menu.selectCourse': 'Select Course', 'menu.tournaments': 'Tournaments', 'menu.myBag': 'My Bag', 'menu.friends': 'Friends', 'menu.settings': 'Settings',
   // HUD
   'hud.hole': 'Hole', 'hud.par': 'Par', 'hud.strokes': 'Strokes', 'hud.line': 'Line', 'hud.playsLike': 'Plays Like',
   'hud.club': 'Club', 'hud.logShot': 'Log Shot', 'hud.logged': 'Logged', 'hud.next': 'Next', 'hud.finish': 'Finish',
@@ -52,7 +52,7 @@ export type StringKey = keyof typeof en;
 type Dict = Partial<Record<StringKey, string>>;
 
 const es: Dict = {
-  'menu.selectCourse': 'Elegir campo', 'menu.myBag': 'Mi bolsa', 'menu.friends': 'Amigos', 'menu.settings': 'Ajustes',
+  'menu.selectCourse': 'Elegir campo', 'menu.tournaments': 'Torneos', 'menu.myBag': 'Mi bolsa', 'menu.friends': 'Amigos', 'menu.settings': 'Ajustes',
   'hud.hole': 'Hoyo', 'hud.par': 'Par', 'hud.strokes': 'Golpes', 'hud.line': 'Línea', 'hud.playsLike': 'Juega como',
   'hud.club': 'Palo', 'hud.logShot': 'Registrar golpe', 'hud.logged': 'Registrado', 'hud.next': 'Sig.', 'hud.finish': 'Fin',
   'hud.puttView': 'Vista putt', 'hud.pin': 'Bandera', 'hud.up': 'Subida', 'hud.down': 'Bajada', 'hud.flat': 'Plano',
@@ -93,7 +93,7 @@ const es: Dict = {
 };
 
 const fr: Dict = {
-  'menu.selectCourse': 'Choisir le parcours', 'menu.myBag': 'Mon sac', 'menu.friends': 'Amis', 'menu.settings': 'Réglages',
+  'menu.selectCourse': 'Choisir le parcours', 'menu.tournaments': 'Tournois', 'menu.myBag': 'Mon sac', 'menu.friends': 'Amis', 'menu.settings': 'Réglages',
   'hud.hole': 'Trou', 'hud.par': 'Par', 'hud.strokes': 'Coups', 'hud.line': 'Ligne', 'hud.playsLike': 'Se joue',
   'hud.club': 'Club', 'hud.logShot': 'Noter le coup', 'hud.logged': 'Noté', 'hud.next': 'Suiv.', 'hud.finish': 'Fin',
   'hud.puttView': 'Vue putt', 'hud.pin': 'Drapeau', 'hud.up': 'Montée', 'hud.down': 'Descente', 'hud.flat': 'Plat',
@@ -113,7 +113,7 @@ const fr: Dict = {
 };
 
 const de: Dict = {
-  'menu.selectCourse': 'Platz wählen', 'menu.myBag': 'Mein Bag', 'menu.friends': 'Freunde', 'menu.settings': 'Einstellungen',
+  'menu.selectCourse': 'Platz wählen', 'menu.tournaments': 'Turniere', 'menu.myBag': 'Mein Bag', 'menu.friends': 'Freunde', 'menu.settings': 'Einstellungen',
   'hud.hole': 'Loch', 'hud.par': 'Par', 'hud.strokes': 'Schläge', 'hud.line': 'Linie', 'hud.playsLike': 'Spielt sich',
   'hud.club': 'Schläger', 'hud.logShot': 'Schlag erfassen', 'hud.logged': 'Erfasst', 'hud.next': 'Weiter', 'hud.finish': 'Ende',
   'hud.puttView': 'Putt-Ansicht', 'hud.pin': 'Fahne', 'hud.up': 'Bergauf', 'hud.down': 'Bergab', 'hud.flat': 'Eben',
@@ -129,7 +129,7 @@ const de: Dict = {
 };
 
 const pt: Dict = {
-  'menu.selectCourse': 'Escolher campo', 'menu.myBag': 'Meu saco', 'menu.friends': 'Amigos', 'menu.settings': 'Definições',
+  'menu.selectCourse': 'Escolher campo', 'menu.tournaments': 'Torneios', 'menu.myBag': 'Meu saco', 'menu.friends': 'Amigos', 'menu.settings': 'Definições',
   'hud.hole': 'Buraco', 'hud.par': 'Par', 'hud.strokes': 'Pancadas', 'hud.line': 'Linha', 'hud.playsLike': 'Joga como',
   'hud.club': 'Taco', 'hud.logShot': 'Registar pancada', 'hud.logged': 'Registado', 'hud.next': 'Próx.', 'hud.finish': 'Fim',
   'hud.puttView': 'Vista putt', 'hud.pin': 'Bandeira', 'hud.communityPin': 'Bandeira comunidade', 'hud.front': 'frente', 'hud.back': 'trás',
