@@ -9,7 +9,7 @@ const SatelliteMap = lazy(() => import('../map/SatelliteMap'));
 const PROVIDER = imageryProvider();
 import { PuttView } from './PuttView';
 import { playsLike, recommendClub, windArrowDeg, type Club, type Conditions } from '../lib/caddie';
-import { COURSE, lieFor, type Hole, type TeeId } from '../data/course';
+import { lieFor, type Hole, type TeeId } from '../data/course';
 import { usePrefs } from '../i18n/prefs';
 import { usePinFeed } from '../lib/pinFeed';
 import { bearingDeg, distanceM, liveDistance } from '../../supabase/functions/_shared/pins.ts';
@@ -38,6 +38,8 @@ interface Props {
   buddies?: Buddy[];
   tournamentMode?: boolean;
   sync?: SyncStatus;
+  courseName: string;
+  courseAttribution: string;
   /** Server round id, enabling the live community pin network. */
   remoteRoundId?: string;
 }
@@ -53,7 +55,7 @@ const glass = 'bg-black/40 backdrop-blur-xl backdrop-saturate-150 border border-
 const scoreColor = (s: string) => (s.startsWith('-') ? 'text-red-400' : s === 'E' ? 'text-emerald-400' : 'text-white/90');
 
 export function CaddieHud({
-  hole, tee, strokes, roundScore, format, isLastHole, bag, onLog, onUndo, onNext, onScorecard, onExit, buddies = [], tournamentMode = false, sync = 'off', remoteRoundId,
+  hole, tee, strokes, roundScore, format, isLastHole, bag, onLog, onUndo, onNext, onScorecard, onExit, buddies = [], tournamentMode = false, sync = 'off', remoteRoundId, courseName, courseAttribution,
 }: Props) {
   const [justLogged, setJustLogged] = useState(false);
   const [puttView, setPuttView] = useState(false);
@@ -77,7 +79,7 @@ export function CaddieHud({
 
   // Static course data measures to the green centre; the community pin shifts it along/across
   // the line of play. When the shot is aimed at the flag, the aim line moves with it.
-  const pins = usePinFeed({ holeNo: hole.number, bearingDeg: approachBearing, enabled: communityPins, remoteRoundId });
+  const pins = usePinFeed({ holeNo: hole.number, bearingDeg: approachBearing, courseName, green: geo.green, enabled: communityPins, remoteRoundId });
   const pinYds = Math.max(1, Math.round(liveDistance(lie.pin, pins.depthM * M_TO_YD, pins.lateralM * M_TO_YD)));
   const lineYds = lie.line === lie.pin ? pinYds : lie.line;
   const pinNote = (() => {
@@ -313,7 +315,7 @@ export function CaddieHud({
             </div>
           </section>
           {!mapFailed && PROVIDER && (
-            <p className="pointer-events-none -mt-1 text-center text-[8px] leading-none text-white/35">{PROVIDER.attribution} · {COURSE.attribution}</p>
+            <p className="pointer-events-none -mt-1 text-center text-[8px] leading-none text-white/35">{PROVIDER.attribution} · {courseAttribution}</p>
           )}
         </div>
       </div>

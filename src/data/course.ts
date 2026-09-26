@@ -1,3 +1,6 @@
+import somerby from './courses/somerby.json';
+import { bearingDeg } from '../../supabase/functions/_shared/pins.ts';
+
 export interface Lie {
   /** Yards to the aim point for this shot. */
   line: number;
@@ -16,22 +19,38 @@ export interface Hole {
   bearingDeg: number;
   /** Hole centre line from the back tee to the green centre, [lat, lng] (follows doglegs). */
   path: [number, number][];
+  /** Green centre, [lat, lng]. */
+  green: [number, number];
   /** Mock GPS feed: lie after N strokes. Past the end, the last lie repeats. */
   lies: Lie[];
 }
 
-import somerby from './courses/somerby.json';
-import { bearingDeg } from '../../supabase/functions/_shared/pins.ts';
+/** Stored course (bundled or downloaded). Hole geometry comes from OpenStreetMap. */
+export interface CourseData {
+  id: string;
+  name: string;
+  location?: string;
+  center: [number, number];
+  attribution: string;
+  holes: { number: number; par: number; parSource: string; yards: number; path: [number, number][]; green: [number, number] }[];
+  downloadedAt?: number;
+}
 
-/**
- * Somerby Golf Club, Byron, MN — hole geometry imported from OpenStreetMap
- * (scripts/import-course-osm.mjs; © OpenStreetMap contributors, ODbL). Pars tagged in OSM are
- * used as-is; the rest are estimated from length and corrected to the published par 72.
- */
-const GEO = somerby.holes as { number: number; par: number; parSource: string; yards: number; path: [number, number][]; green: [number, number] }[];
+export interface CourseModel {
+  id: string;
+  name: string;
+  location?: string;
+  attribution: string;
+  /** 18, or 9 for nine-hole courses. */
+  holeCount: 9 | 18;
+  /** Holes 1..holeCount are all mapped. */
+  playable: boolean;
+  pars: number[];
+  holesFor: (tee: TeeId) => Hole[];
+  data: CourseData;
+}
+
 const MAX_LAYUP = 250;
-const PARS = GEO.map((h) => h.par);
-const YARDS = GEO.map((h) => h.yards);
 
 /** Stock mock plan: lay up to MAX_LAYUP until in range, approach leaves ~8% of the distance, then short putts. */
 export function planLies(yards: number, holeNo: number): Lie[] {
@@ -61,37 +80,58 @@ export const TEES: Record<TeeId, { label: string; factor: number; rating: number
 };
 export const TEE_IDS = Object.keys(TEES) as TeeId[];
 
-export const PAR_BY_HOLE = PARS;
-
-export function buildHoles(tee: TeeId): Hole[] {
-  const f = TEES[tee].factor;
-  return PARS.map((par, i) => {
-    const yards = Math.round(YARDS[i] * f);
-    const path = GEO[i].path;
-    const [tLat, tLng] = path[0];
-    const [gLat, gLng] = GEO[i].green;
-    return {
-      number: i + 1, par, yards, path,
-      bearingDeg: bearingDeg({ lat: tLat, lng: tLng }, { lat: gLat, lng: gLng }),
-      lies: planLies(yards, i + 1),
-    };
-  });
+/** Build a playable model from stored course data. */
+export function buildCourseModel(data: CourseData): CourseModel {
+  const byNo = new Map(data.holes.map((h) => [h.number, h]));
+  const has = (n: number) => Array.from({ length: n }, (_, i) => byNo.has(i + 1)).every(Boolean);
+  const holeCount: 9 | 18 = has(18) ? 18 : 9;
+  const playable = has(holeCount);
+  const holes = Array.from({ length: holeCount }, (_, i) => byNo.get(i + 1)).filter((h): h is NonNullable<typeof h> => !!h);
+  const cache = new Map<TeeId, Hole[]>();
+  const holesFor = (tee: TeeId) => {
+    const hit = cache.get(tee);
+    if (hit) return hit;
+    const f = TEES[tee].factor;
+    const built = holes.map<Hole>((h) => {
+      const yards = Math.round(h.yards * f);
+      const [tLat, tLng] = h.path[0];
+      return {
+        number: h.number, par: h.par, yards, path: h.path, green: h.green,
+        bearingDeg: bearingDeg({ lat: tLat, lng: tLng }, { lat: h.green[0], lng: h.green[1] }),
+        lies: planLies(yards, h.number),
+      };
+    });
+    cache.set(tee, built);
+    return built;
+  };
+  return {
+    id: data.id, name: data.name, location: data.location, attribution: `Course data ${data.attribution}`,
+    holeCount, playable, pars: holes.map((h) => h.par), holesFor, data,
+  };
 }
 
-const cache = new Map<TeeId, Hole[]>();
-export const holesFor = (tee: TeeId) => cache.get(tee) ?? (cache.set(tee, buildHoles(tee)), cache.get(tee)!);
-
-export const COURSE = {
+/**
+ * Bundled sample: Somerby Golf Club, Byron, MN — imported from OpenStreetMap
+ * (scripts/import-course-osm.mjs; © OpenStreetMap contributors, ODbL). Pars tagged in OSM are
+ * used as-is; the rest are estimated from length and corrected to the published par 72.
+ */
+export const SOMERBY_DATA: CourseData = {
+  id: 'osm-way-157330030',
   name: somerby.name,
   location: 'Byron, MN',
-  attribution: `Course data ${somerby.attribution}`,
-  holes: holesFor('black'),
+  center: [44.047372, -92.631858],
+  attribution: somerby.attribution,
+  holes: somerby.holes as CourseData['holes'],
+};
+export const SOMERBY = buildCourseModel(SOMERBY_DATA);
+
+// Somerby shortcuts (tests and the SQL seed parity check).
+export const COURSE = { name: SOMERBY.name, location: SOMERBY.location, attribution: SOMERBY.attribution, holes: SOMERBY.holesFor('black') };
+export const PAR_BY_HOLE = SOMERBY.pars;
+export const holesFor = SOMERBY.holesFor;
+export const greenCenter = (holeNo: number) => {
+  const [lat, lng] = SOMERBY_DATA.holes[holeNo - 1].green;
+  return { lat, lng };
 };
 
 export const lieFor = (hole: Hole, strokes: number) => hole.lies[Math.min(strokes, hole.lies.length - 1)];
-
-/** Green centre (centroid of the mapped green); also seeded into course_greens in SQL. */
-export const greenCenter = (holeNo: number) => {
-  const [lat, lng] = GEO[holeNo - 1].green;
-  return { lat, lng };
-};

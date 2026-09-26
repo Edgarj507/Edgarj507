@@ -24,6 +24,14 @@ const en = {
   // scorecard
   'card.title': 'Scorecard', 'card.hole': 'Hole', 'card.par': 'Par', 'card.score': 'Score', 'card.out': 'Out', 'card.in': 'In',
   'card.thru': 'Thru', 'card.end': 'End Round & Return to Menu', 'card.tap': 'Tap a hole to jump to it',
+  // course discovery
+  'courses.title': 'Your Courses', 'courses.nearYou': 'Near you', 'courses.intro': 'Pick the courses you play. We’ll download their layouts and imagery so they’re ready on the course.',
+  'courses.search': 'Search any course worldwide…', 'courses.results': 'Search results', 'courses.noResults': 'No golf courses found.',
+  'courses.home': 'Home courses', 'courses.nearby': 'Nearby courses', 'courses.retry': 'Retry', 'courses.offline': 'Saved on this device',
+  'courses.download': 'Download course data', 'courses.continue': 'Continue', 'courses.downloading': 'Downloading courses',
+  'courses.ready': 'Courses ready', 'courses.step.layout': 'Hole layout & par', 'courses.step.imagery': 'Satellite imagery',
+  'courses.step.pins': 'Community pin data', 'courses.signInForPins': 'sign in', 'courses.back': 'Back', 'courses.cancel': 'Cancel',
+  'courses.setUpRound': 'Set up round', 'courses.change': 'Find courses', 'courses.skip': 'Skip · play the sample course',
   // settings
   'settings.title': 'Settings', 'settings.language': 'Language', 'settings.detected': 'Detected from your device',
   'settings.units': 'Distance units', 'settings.yards': 'Yards', 'settings.meters': 'Meters',
@@ -55,6 +63,13 @@ const es: Dict = {
   'setup.guestLocal': 'Las rondas de invitado se quedan en este dispositivo.',
   'card.title': 'Tarjeta', 'card.hole': 'Hoyo', 'card.par': 'Par', 'card.score': 'Golpes', 'card.out': 'Ida', 'card.in': 'Vuelta',
   'card.thru': 'Tras', 'card.end': 'Terminar ronda y volver', 'card.tap': 'Toca un hoyo para ir a él',
+  'courses.title': 'Tus campos', 'courses.nearYou': 'Cerca de ti', 'courses.intro': 'Elige los campos donde juegas. Descargaremos su diseño e imágenes para tenerlos listos en el campo.',
+  'courses.search': 'Busca cualquier campo del mundo…', 'courses.results': 'Resultados', 'courses.noResults': 'No se encontraron campos.',
+  'courses.home': 'Campos habituales', 'courses.nearby': 'Campos cercanos', 'courses.retry': 'Reintentar', 'courses.offline': 'Guardados en este dispositivo',
+  'courses.download': 'Descargar datos', 'courses.continue': 'Continuar', 'courses.downloading': 'Descargando campos',
+  'courses.ready': 'Campos listos', 'courses.step.layout': 'Hoyos y par', 'courses.step.imagery': 'Imagen satelital',
+  'courses.step.pins': 'Banderas de la comunidad', 'courses.signInForPins': 'inicia sesión', 'courses.back': 'Atrás', 'courses.cancel': 'Cancelar',
+  'courses.setUpRound': 'Configurar ronda', 'courses.change': 'Buscar campos', 'courses.skip': 'Omitir · jugar el campo de muestra',
   'settings.title': 'Ajustes', 'settings.language': 'Idioma', 'settings.detected': 'Detectado en tu dispositivo',
   'settings.units': 'Unidades de distancia', 'settings.yards': 'Yardas', 'settings.meters': 'Metros',
   'settings.units.sub': 'Se aplica a todas las distancias del HUD, la tarjeta y la bolsa.',

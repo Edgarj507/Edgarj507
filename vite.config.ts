@@ -47,7 +47,16 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_');
   guardClientEnv(env);
   return {
-    plugins: [react(), tailwindcss(), csp(env.VITE_SUPABASE_URL, imageryProvider(env)?.origins ?? [])],
+    plugins: [
+      react(),
+      tailwindcss(),
+      csp(env.VITE_SUPABASE_URL, [
+        ...(imageryProvider(env)?.origins ?? []),
+        // Course directory (OpenStreetMap Overpass + Nominatim, or your own mirrors).
+        ...(env.VITE_OVERPASS_URLS ?? 'https://overpass-api.de/api/interpreter').split(',').map((u) => new URL(u.trim()).origin),
+        new URL(env.VITE_NOMINATIM_URL ?? 'https://nominatim.openstreetmap.org').origin,
+      ]),
+    ],
     worker: { format: 'es' as const }, // MapLibre v6 runs its worker as an ES module
     envPrefix: 'VITE_',
     test: { environment: 'node', globals: true },

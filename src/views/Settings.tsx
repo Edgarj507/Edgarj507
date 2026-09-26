@@ -1,8 +1,8 @@
-import { ChevronLeft, ChevronRight, Globe, Ruler, Shield, Users } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Flag, Globe, Ruler, Shield, Users } from 'lucide-react';
 import { usePrefs, type Units } from '../i18n/prefs';
 import { LANGUAGES, type Lang } from '../i18n/strings';
 
-export function SettingsView({ onBack, onProfile }: { onBack: () => void; onProfile: () => void }) {
+export function SettingsView({ onBack, onProfile, onCourses }: { onBack: () => void; onProfile: () => void; onCourses: () => void }) {
   const { t, lang, units, communityPins, langDetected, set } = usePrefs();
   const seg = (active: boolean) =>
     `flex-1 rounded-lg py-2 text-[10px] font-bold uppercase tracking-widest transition-all ${active ? 'bg-emerald-500/20 text-emerald-400' : 'text-white/50'}`;
@@ -72,6 +72,12 @@ export function SettingsView({ onBack, onProfile }: { onBack: () => void; onProf
 
         <section className="flex flex-col gap-2">
           <span className="pl-1 text-[10px] font-bold uppercase tracking-widest text-white/50">{t('settings.account')}</span>
+          <button onClick={onCourses} className="flex items-center justify-between rounded-xl border border-white/10 bg-black/40 p-4 backdrop-blur-md transition-all hover:bg-white/5 active:scale-[0.98]">
+            <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-white">
+              <Flag size={14} className="text-emerald-400" /> {t('courses.title')}
+            </span>
+            <ChevronRight size={16} className="text-white/30" />
+          </button>
           <button onClick={onProfile} className="flex items-center justify-between rounded-xl border border-white/10 bg-black/40 p-4 backdrop-blur-md transition-all hover:bg-white/5 active:scale-[0.98]">
             <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-white">
               <Shield size={14} className="text-emerald-400" /> {t('settings.profile')}

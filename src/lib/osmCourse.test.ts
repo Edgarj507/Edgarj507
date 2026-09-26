@@ -1,4 +1,4 @@
-import { buildCourse, estimatePar } from './osm-course.mjs';
+import { buildCourse, estimatePar } from './osmCourse.mjs';
 
 const way = (id: number, ref: string, coords: [number, number][], tags: Record<string, string> = {}) => ({
   type: 'way', id, tags: { golf: 'hole', ref, ...tags }, geometry: coords.map(([lat, lon]) => ({ lat, lon })),

@@ -1,4 +1,4 @@
-import { greenCenter, type Hole } from '../data/course';
+import type { Hole } from '../data/course';
 import { bearingDeg, distanceM, type LatLng } from '../../supabase/functions/_shared/pins.ts';
 
 const YD = 0.9144;
@@ -28,7 +28,7 @@ export function pointFromGreen(path: LatLng[], meters: number): LatLng {
 /** Real hole geometry: the mapped centre line, shortened at the tee end for forward tees. */
 export function holeGeometry(hole: Hole): HoleGeometry {
   const full = hole.path.map(toLL);
-  const green = greenCenter(hole.number);
+  const green = toLL(hole.green);
   full[full.length - 1] = green;
   const fullM = full.slice(1).reduce((s, p, i) => s + distanceM(full[i], p), 0);
   const teeM = Math.min(hole.yards * YD, fullM);

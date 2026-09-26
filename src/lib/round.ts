@@ -13,6 +13,8 @@ export type Format = (typeof FORMATS)[number];
 export type RoundLength = '18' | 'front' | 'back';
 
 export interface RoundConfig {
+  /** Course id from the course library; absent on older saved rounds (→ bundled Somerby). */
+  courseId?: string;
   tee: TeeId;
   format: Format;
   length: RoundLength;
@@ -55,11 +57,13 @@ export const newRound = (config: RoundConfig = DEFAULT_CONFIG): RoundState => ({
 });
 
 export const hasStrokes = (s: RoundState) => s.shots.some((h) => h.length > 0);
-export const sameConfig = (a: RoundConfig, b: RoundConfig) => a.tee === b.tee && a.format === b.format && a.length === b.length;
+export const sameConfig = (a: RoundConfig, b: RoundConfig) =>
+  (a.courseId ?? '') === (b.courseId ?? '') && a.tee === b.tee && a.format === b.format && a.length === b.length;
 
 export function isRoundState(x: unknown): x is RoundState {
   const r = x as RoundState;
   if (!r || r.v !== 3 || !r.config || !(FORMATS as readonly string[]).includes(r.config.format)) return false;
+  if (r.config.courseId !== undefined && typeof r.config.courseId !== 'string') return false;
   if (!['black', 'blue', 'white', 'red'].includes(r.config.tee) || !['18', 'front', 'back'].includes(r.config.length)) return false;
   const { start, end } = holeRange(r.config.length);
   if (r.remoteId !== undefined && typeof r.remoteId !== 'string') return false;

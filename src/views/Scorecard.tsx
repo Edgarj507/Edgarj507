@@ -1,5 +1,5 @@
 import { ChevronLeft } from 'lucide-react';
-import { COURSE, TEES, type Hole } from '../data/course';
+import { TEES, type Hole } from '../data/course';
 import { holeRange, totals, type RoundState } from '../lib/round';
 import type { ScoringSummary } from '../lib/scoring';
 import { usePrefs } from '../i18n/prefs';
@@ -9,6 +9,7 @@ interface Props {
   /** Holes for the round's tee (yardages differ per tee). */
   holes: Hole[];
   summary: ScoringSummary;
+  courseName: string;
   onBack: () => void;
   onSelectHole: (index: number) => void;
   onNewRound: () => void;
@@ -26,7 +27,7 @@ function scoreStyle(strokes: number, par: number) {
   return 'ring-2 ring-white/30 rounded-md text-white/90';
 }
 
-export function Scorecard({ round, holes, summary, onBack, onSelectHole, onNewRound }: Props) {
+export function Scorecard({ round, holes, summary, courseName, onBack, onSelectHole, onNewRound }: Props) {
   const { t, d, u } = usePrefs();
   const { start, end } = holeRange(round.config.length);
   const pars = holes.map((h) => h.par);
@@ -60,7 +61,7 @@ export function Scorecard({ round, holes, summary, onBack, onSelectHole, onNewRo
       </div>
 
       <p className="mb-3 text-[10px] uppercase tracking-widest text-white/40">
-        {COURSE.name} · {TEES[round.config.tee].label} tees · {t(round.config.length === '18' ? 'setup.18' : round.config.length === 'front' ? 'setup.front' : 'setup.back')}
+        {courseName} · {TEES[round.config.tee].label} tees · {t(round.config.length === '18' ? 'setup.18' : round.config.length === 'front' ? 'setup.front' : 'setup.back')}
       </p>
 
       <div className="no-scrollbar z-10 flex-1 overflow-y-auto pb-24">

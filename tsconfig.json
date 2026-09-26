@@ -21,7 +21,6 @@
     "resolveJsonModule": true
   },
   "include": [
-    "scripts/osm-course.test.ts",
     "src",
     "vite.config.ts",
     "scripts",

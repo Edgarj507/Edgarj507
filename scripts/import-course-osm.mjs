@@ -9,7 +9,7 @@
  * Pars come from the hole's `par` tag; missing pars are estimated from length and flagged.
  */
 import { writeFileSync } from 'node:fs';
-import { buildCourse } from './osm-course.mjs';
+import { buildCourse } from '../src/lib/osmCourse.mjs';
 
 const args = process.argv.slice(2);
 const parFlag = args.indexOf('--par');

@@ -8,7 +8,9 @@ import { CaddieHud } from './hud/CaddieHud';
 import { MapPlaceholder } from './hud/MapPlaceholder';
 import { Scorecard } from './views/Scorecard';
 import { BagWizard } from './views/BagWizard';
-import { COURSE, PAR_BY_HOLE as PARS, TEES, holesFor, type TeeId } from './data/course';
+import { SOMERBY, TEES, type TeeId } from './data/course';
+import { useCourses } from './courses/CourseLibrary';
+import { CourseSetup } from './views/CourseSetup';
 import { FORMATS, hasStrokes, holeRange, sameConfig, type Format, type RoundConfig, type RoundLength } from './lib/round';
 import { mockPartnerScore, summarize } from './lib/scoring';
 import { useBag, useRound } from './lib/hooks';
@@ -29,7 +31,7 @@ const FORMAT_HELP: Record<Format, string> = {
 };
 const NEEDS_PARTNER: Format[] = ['Match Play', 'Best Ball'];
 
-type View = 'menu' | 'course' | 'invite' | 'bag' | 'friends' | 'hud' | 'scorecard' | 'profile' | 'settings';
+type View = 'menu' | 'course' | 'courses' | 'invite' | 'bag' | 'friends' | 'hud' | 'scorecard' | 'profile' | 'settings';
 
 const MOCK_DATA = {
   friends: {
@@ -53,7 +55,9 @@ export default function App() {
   const [currentView, setCurrentView] = useState<View>('menu'); // 'menu', 'course', 'invite', 'bag', 'friends', 'hud'
   
   // Select Course / Round State
+  const lib = useCourses();
   const [courseSetup, setCourseSetup] = useState({
+    courseId: '' as string, // '' → first home course, else bundled Somerby
     tee: 'blue' as TeeId,
     format: 'Stroke Play' as Format,
     length: '18' as RoundLength,
@@ -64,10 +68,15 @@ export default function App() {
   const auth = useAuth();
   const { t, d, u } = usePrefs();
   const roundVisibility: Visibility = courseSetup.visibility ?? auth.profile.stats_visibility;
-  const setupConfig: RoundConfig = { tee: courseSetup.tee, format: courseSetup.format, length: courseSetup.length };
+  const setupModel = lib.get(courseSetup.courseId || lib.homeIds.find(id => lib.has(id) && lib.get(id).playable) || SOMERBY.id);
+  // Nine-hole courses only offer the front nine.
+  const setupLength: RoundLength = setupModel.holeCount === 9 ? 'front' : courseSetup.length;
+  const setupConfig: RoundConfig = { courseId: setupModel.id, tee: courseSetup.tee, format: courseSetup.format, length: setupLength };
 
   const [round, dispatch] = useRound();
+  const roundCourse = lib.get(round.config.courseId);
   const sync = useRoundSync(round, dispatch, {
+    course: roundCourse,
     userId: auth.status === 'signedIn' ? auth.user?.id ?? null : null,
     visibility: roundVisibility,
   });
@@ -130,7 +139,7 @@ export default function App() {
         ].map(item => (
           <button
             key={item.id}
-            onClick={() => setCurrentView(item.id as View)}
+            onClick={() => setCurrentView(item.id === 'course' && lib.loaded && lib.homeIds.length === 0 ? 'courses' : item.id as View)}
             className="w-full bg-black/40 hover:bg-black/60 backdrop-blur-md border border-white/10 rounded-2xl p-4 flex items-center justify-between transition-all active:scale-[0.98] shadow-sm"
           >
             <div className="flex items-center gap-3">
@@ -214,11 +223,14 @@ export default function App() {
       { id: 'white', color: 'bg-gray-100', border: 'border-white' },
       { id: 'red', color: 'bg-red-600', border: 'border-red-400' },
     ];
-    const setupRange = holeRange(courseSetup.length);
+    const setupRange = holeRange(setupLength);
     const teeYards = (tee: TeeId) =>
-      holesFor(tee).slice(setupRange.start, setupRange.end + 1).reduce((a, h) => a + h.yards, 0);
-    const setupPar = PARS.slice(setupRange.start, setupRange.end + 1).reduce((a, b) => a + b, 0);
-    const is9 = courseSetup.length !== '18';
+      setupModel.holesFor(tee).slice(setupRange.start, setupRange.end + 1).reduce((a, h) => a + h.yards, 0);
+    const setupPar = setupModel.pars.slice(setupRange.start, setupRange.end + 1).reduce((a, b) => a + b, 0);
+    const pickable = (lib.homeIds.length ? lib.homeIds.filter(id => lib.has(id)) : lib.courses.map(c => c.id)).map(id => lib.get(id));
+    if (!pickable.some(c => c.id === setupModel.id)) pickable.unshift(setupModel);
+    const is9 = setupLength !== '18';
+    const nineOnly = setupModel.holeCount === 9;
     const resuming = hasStrokes(round) && sameConfig(round.config, setupConfig);
     const pill = (active: boolean) =>
       `flex-1 py-2 rounded-lg text-[10px] font-bold tracking-widest uppercase transition-all border ${
@@ -238,35 +250,52 @@ export default function App() {
           
           <div className="flex flex-col gap-2">
             <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">{t('setup.course')}</span>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search size={14} className="text-white/40" />
-              </div>
-              <input type="text" placeholder={t('setup.search')} className="w-full bg-black/40 backdrop-blur-md border border-white/10 rounded-xl py-3 pl-9 pr-3 text-xs text-white placeholder-white/30 focus:outline-none focus:border-emerald-500/50" />
+            <div className="flex flex-col gap-1.5">
+              {pickable.map(c => {
+                const on = c.id === setupModel.id;
+                return (
+                  <button
+                    key={c.id}
+                    role="radio"
+                    aria-checked={on}
+                    disabled={!c.playable}
+                    onClick={() => setCourseSetup({ ...courseSetup, courseId: c.id })}
+                    className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left backdrop-blur-md transition-all disabled:opacity-40 ${on ? 'bg-emerald-500/15 border-emerald-500/50' : 'bg-black/40 border-white/10 hover:bg-white/5'}`}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <MapPin size={12} className={on ? 'text-emerald-400' : 'text-white/40'} />
+                      <span className="min-w-0">
+                        <span className={`block truncate text-[12px] font-bold ${on ? 'text-emerald-300' : 'text-white/85'}`}>{c.name}</span>
+                        <span className="block truncate text-[9px] text-white/40">{[c.location, `${c.holeCount} holes`, `Par ${c.pars.reduce((a, b) => a + b, 0)}`].filter(Boolean).join(' · ')}</span>
+                      </span>
+                    </span>
+                    {!c.playable && <span className="text-[8px] font-bold uppercase text-amber-300">Partial map</span>}
+                  </button>
+                );
+              })}
+              <button onClick={() => setCurrentView('courses')} className="flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-white/15 py-2.5 text-[10px] font-bold uppercase tracking-widest text-white/60 hover:bg-white/5">
+                <Search size={12} /> {t('courses.change')}
+              </button>
             </div>
-            <button className="self-start mt-1 bg-white/10 border border-white/10 rounded-full px-3 py-1.5 flex items-center gap-1.5 hover:bg-white/20 transition-colors">
-              <MapPin size={10} className="text-emerald-400" />
-              <span className="text-[11px] font-medium text-white/90">{COURSE.name}</span>
-            </button>
           </div>
 
           <div className="flex flex-col gap-2">
             <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">{t('setup.holes')}</span>
             <div role="radiogroup" aria-label="Round length" className="flex gap-1 bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-1">
-              <button role="radio" aria-checked={!is9} onClick={() => setCourseSetup({ ...courseSetup, length: '18' })} className={pill(!is9)}>{t('setup.18')}</button>
-              <button role="radio" aria-checked={is9} onClick={() => setCourseSetup({ ...courseSetup, length: is9 ? courseSetup.length : 'front' })} className={pill(is9)}>{t('setup.9')}</button>
+              <button role="radio" aria-checked={!is9} disabled={nineOnly} onClick={() => setCourseSetup({ ...courseSetup, length: '18' })} className={`${pill(!is9)} disabled:opacity-30`}>{t('setup.18')}</button>
+              <button role="radio" aria-checked={is9} onClick={() => setCourseSetup({ ...courseSetup, length: is9 ? setupLength : 'front' })} className={pill(is9)}>{t('setup.9')}</button>
             </div>
             {is9 && (
               <div role="radiogroup" aria-label="Which nine" className="grid grid-cols-2 gap-2">
-                {([['front', t('setup.front'), t('setup.front.sub')], ['back', t('setup.back'), t('setup.back.sub')]] as const).map(([id, label, sub]) => (
+                {([['front', t('setup.front'), t('setup.front.sub')], ...(nineOnly ? [] : [['back', t('setup.back'), t('setup.back.sub')]] as const)] as const).map(([id, label, sub]) => (
                   <button
                     key={id}
                     role="radio"
-                    aria-checked={courseSetup.length === id}
+                    aria-checked={setupLength === id}
                     onClick={() => setCourseSetup({ ...courseSetup, length: id })}
-                    className={`rounded-xl border px-3 py-2.5 text-left backdrop-blur-md transition-all ${courseSetup.length === id ? 'bg-emerald-500/15 border-emerald-500/50' : 'bg-black/40 border-white/10 hover:bg-white/5'}`}
+                    className={`rounded-xl border px-3 py-2.5 text-left backdrop-blur-md transition-all ${setupLength === id ? 'bg-emerald-500/15 border-emerald-500/50' : 'bg-black/40 border-white/10 hover:bg-white/5'}`}
                   >
-                    <div className={`text-[11px] font-bold uppercase tracking-wider ${courseSetup.length === id ? 'text-emerald-400' : 'text-white/80'}`}>{label}</div>
+                    <div className={`text-[11px] font-bold uppercase tracking-wider ${setupLength === id ? 'text-emerald-400' : 'text-white/80'}`}>{label}</div>
                     <div className="text-[9px] text-white/40 mt-0.5">{sub}</div>
                   </button>
                 ))}
@@ -511,7 +540,9 @@ export default function App() {
     .filter((f): f is (typeof MOCK_DATA.friends.network)[number] => Boolean(f));
 
   // --- Live round derivations (tee → yardages, length → hole range, format → scoring) ---
-  const roundHoles = holesFor(round.config.tee);
+  const activeCourse = lib.get(round.config.courseId);
+  const PARS = activeCourse.pars;
+  const roundHoles = activeCourse.holesFor(round.config.tee);
   const range = holeRange(round.config.length);
   const rangeIdx = Array.from({ length: range.end - range.start + 1 }, (_, k) => range.start + k);
   const partner = hudBuddies[0];
@@ -563,6 +594,8 @@ export default function App() {
             }}
             sync={sync.status}
             remoteRoundId={round.remoteId}
+            courseName={activeCourse.name}
+            courseAttribution={activeCourse.attribution}
             onScorecard={() => setCurrentView('scorecard')}
             onExit={() => setCurrentView('menu')}
             buddies={liveBuddies}
@@ -581,11 +614,22 @@ export default function App() {
               {currentView === 'bag' && <BagWizard bag={bag} gear={gear} setGear={setGear} setCarry={setCarry} resetCarry={resetCarry} onExit={() => setCurrentView('menu')} />}
               {currentView === 'friends' && ViewFriends()}
               {currentView === 'profile' && <ProfileView onBack={() => setCurrentView('settings')} />}
-              {currentView === 'settings' && <SettingsView onBack={() => setCurrentView('menu')} onProfile={() => setCurrentView('profile')} />}
+              {currentView === 'settings' && <SettingsView onBack={() => setCurrentView('menu')} onProfile={() => setCurrentView('profile')} onCourses={() => setCurrentView('courses')} />}
+              {currentView === 'courses' && (
+                <CourseSetup
+                  signedIn={auth.status === 'signedIn'}
+                  onBack={() => setCurrentView('menu')}
+                  onDone={id => {
+                    if (id) setCourseSetup(s => ({ ...s, courseId: id }));
+                    setCurrentView('course');
+                  }}
+                />
+              )}
               {currentView === 'scorecard' && (
                 <Scorecard
                   round={round}
                   holes={roundHoles}
+                  courseName={activeCourse.name}
                   summary={scoreRound(false)}
                   onBack={() => setCurrentView('hud')}
                   onSelectHole={i => { dispatch({ type: 'goto', hole: i }); setCurrentView('hud'); }}

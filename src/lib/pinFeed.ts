@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from './supabase';
-import { COURSE, greenCenter } from '../data/course';
-import { consensus, offsetPoint, pinOffset, type PinConsensus, type PinReport } from '../../supabase/functions/_shared/pins.ts';
+import { consensus, offsetPoint, pinOffset, type LatLng, type PinConsensus, type PinReport } from '../../supabase/functions/_shared/pins.ts';
 
 export interface PinFeed {
   /** Pin offset from green centre along the line of play (m). Zero when no community data. */
@@ -25,9 +24,8 @@ const dayKey = (t: number) => Math.floor(t / 86_400_000);
  * Stand-in for the live network when signed out/offline: a handful of players' reports around
  * today's cup (LiDAR ≈0.3 m, GPS ≈4 m, occasionally a bad actor), fed through the same consensus.
  */
-export function simulatedReports(holeNo: number, bearingDeg: number, now: number): PinReport[] {
+export function simulatedReports(holeNo: number, bearingDeg: number, now: number, g: LatLng): PinReport[] {
   const r = rng(holeNo * 7919 + dayKey(now));
-  const g = greenCenter(holeNo);
   const depth = Math.round((r() * 12 - 6) * 2) / 2;
   const lateral = Math.round((r() * 8 - 4) * 2) / 2;
   const cup = offsetPoint(offsetPoint(g, bearingDeg, depth), bearingDeg + 90, lateral);
@@ -46,12 +44,14 @@ export function simulatedReports(holeNo: number, bearingDeg: number, now: number
 interface Opts {
   holeNo: number;
   bearingDeg: number;
+  courseName: string;
+  green: LatLng;
   enabled: boolean;
   /** Server round id; when set (signed in + synced) the live network is used. */
   remoteRoundId?: string;
 }
 
-export function usePinFeed({ holeNo, bearingDeg, enabled, remoteRoundId }: Opts): PinFeed {
+export function usePinFeed({ holeNo, bearingDeg, courseName, green, enabled, remoteRoundId }: Opts): PinFeed {
   const cloud = !!supabase && !!remoteRoundId;
   const [remote, setRemote] = useState<PinConsensus | null>(null);
   const [mine, setMine] = useState<PinReport[]>([]);
@@ -64,17 +64,17 @@ export function usePinFeed({ holeNo, bearingDeg, enabled, remoteRoundId }: Opts)
     const toConsensus = (row: Record<string, unknown> | null): PinConsensus | null =>
       row ? { lat: Number(row.lat), lng: Number(row.lng), reports: Number(row.reports), spreadM: Number(row.spread_m), status: row.status as PinConsensus['status'], updatedAt: Date.parse(String(row.updated_at)) } : null;
     let alive = true;
-    sb.from('pin_positions').select('*').eq('course_name', COURSE.name).eq('hole', holeNo).maybeSingle()
+    sb.from('pin_positions').select('*').eq('course_name', courseName).eq('hole', holeNo).maybeSingle()
       .then(({ data }) => alive && setRemote(toConsensus(data)));
     const ch = sb
       .channel(`pins:${holeNo}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pin_positions', filter: `hole=eq.${holeNo}` }, (p) => {
         const row = (p.new ?? null) as Record<string, unknown> | null;
-        if (row && row.course_name === COURSE.name) setRemote(toConsensus(row));
+        if (row && row.course_name === courseName) setRemote(toConsensus(row));
       })
       .subscribe();
     return () => { alive = false; void sb.removeChannel(ch); };
-  }, [cloud, enabled, holeNo]);
+  }, [cloud, enabled, holeNo, courseName]);
 
   // Local: refresh the simulated network each minute.
   useEffect(() => {
@@ -84,12 +84,12 @@ export function usePinFeed({ holeNo, bearingDeg, enabled, remoteRoundId }: Opts)
   }, [cloud, enabled]);
 
   const local = useMemo(
-    () => (cloud || !enabled ? null : consensus([...simulatedReports(holeNo, bearingDeg, now), ...mine.filter((m) => m.userId === `me-${holeNo}`)], now)),
-    [cloud, enabled, holeNo, bearingDeg, now, mine],
+    () => (cloud || !enabled ? null : consensus([...simulatedReports(holeNo, bearingDeg, now, green), ...mine.filter((m) => m.userId === `me-${holeNo}`)], now)),
+    [cloud, enabled, holeNo, bearingDeg, now, mine, green.lat, green.lng],
   );
 
   const live = enabled ? (cloud ? remote : local) : null;
-  const off = live ? pinOffset(greenCenter(holeNo), live, bearingDeg) : { depthM: 0, lateralM: 0 };
+  const off = live ? pinOffset(green, live, bearingDeg) : { depthM: 0, lateralM: 0 };
 
   const report = useCallback(async (): Promise<string | null> => {
     if (cloud && supabase) {
@@ -105,7 +105,7 @@ export function usePinFeed({ holeNo, bearingDeg, enabled, remoteRoundId }: Opts)
       return error ? (error.message.match(/[a-z_]+/)?.[0] ?? 'failed') : null;
     }
     // Offline demo: a simulated LiDAR fix on today's consensus cup.
-    const base = live ?? greenCenter(holeNo);
+    const base = live ?? green;
     const t = Date.now();
     setMine((m) => [...m.filter((x) => x.userId !== `me-${holeNo}`), { userId: `me-${holeNo}`, ...offsetPoint(base, Math.random() * 360, 0.15), accuracyM: 0.3, source: 'lidar', reportedAt: t }]);
     setNow(t);
