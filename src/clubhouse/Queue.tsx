@@ -9,8 +9,9 @@ import { ago, hhmm } from './ui';
  *  • Completed — today's completed orders; "Undo" puts a mistaken completion back in the queue
  *    (and out of the End of Day tally).
  */
-export function Queue({ orders, now, selected, onSelect, onStatus }: {
+export function Queue({ orders, now, selected, onSelect, onStatus, cartName }: {
   orders: Order[]; now: number; selected?: string | null; onSelect?: (id: string) => void; onStatus: (id: string, s: Order['status'], label: string) => void;
+  cartName?: (id: string) => string;
 }) {
   const [tab, setTab] = useState<'active' | 'completed'>('active');
   const active = orders.filter(isOpenOrder).sort((a, b) => a.createdAt - b.createdAt);
@@ -38,10 +39,13 @@ export function Queue({ orders, now, selected, onSelect, onStatus }: {
                     <div className="flex items-center gap-1.5 text-[12px] font-bold">
                       {o.kind === 'hail' ? <Car size={13} className="text-sky-300" /> : <ShoppingBag size={13} className="text-amber-300" />}
                       {o.kind === 'hail' ? 'Cart hail' : `$${o.total}`} · {o.player}
+                      {o.source === 'phone' && <span className="rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-sky-300">Phone-in</span>}
                       {o.status === 'enroute' && <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-emerald-300">En route</span>}
                     </div>
                     <div className="mt-0.5 flex items-center gap-1 text-[10px] text-white/55"><MapPin size={10} /> Hole {o.hole} · <span className="font-mono">{o.lat.toFixed(5)}, {o.lng.toFixed(5)}</span> · {ago(o.createdAt, now)}</div>
                     {o.items.length > 0 && <div className="mt-1 text-[11px] text-white/75">{o.items.map((i) => `${i.qty}× ${i.name}`).join(', ')}</div>}
+                    {o.note && <div className="mt-1 rounded-lg bg-white/[0.05] px-2 py-1 text-[11px] italic text-white/70">“{o.note}”</div>}
+                    {(o.phone || (o.cartId && cartName)) && <div className="mt-1 text-[10px] text-white/50">{o.phone ?? ''}{o.phone && o.cartId && cartName ? ' · ' : ''}{o.cartId && cartName ? `→ ${cartName(o.cartId)}` : ''}</div>}
                   </button>
                   <div className="flex shrink-0 flex-col gap-1.5">
                     <button onClick={() => onStatus(o.id, 'completed', `Completed ${who(o)}`)} aria-label={`Mark completed: ${who(o)}`}

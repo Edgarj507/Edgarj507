@@ -1,9 +1,10 @@
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useRef, useState, type PointerEvent as RPE, type WheelEvent as RWE } from 'react';
 import { FastForward, Radar, Truck } from 'lucide-react';
 import { imageryProvider } from '../../map/providers';
 import { isOpenOrder, type Order } from '../../ops/model';
 import type { placeGroups } from '../../ops/pace';
 import type { RadarDot } from './RadarMap';
+import { ZoomControls } from './ZoomControls';
 import { Queue } from '../Queue';
 import { glass, hhmm, Panel, Stat } from '../ui';
 
@@ -25,10 +26,12 @@ interface Props {
   onStatus: (id: string, s: Order['status'], label: string) => void;
   /** Demo: positions are simulated; lets staff fast-forward the event clock. */
   onFastForward?: () => void;
+  /** Beverage carts / SOS pins shown on top of groups and orders. */
+  extraDots?: RadarDot[];
 }
 
 /** Live Event mode: God-mode pace radar (left) + fulfillment queue (right). Mounted only while live. */
-export function LiveRadar({ holes, placed, alertMin, orders, now, liveSince, selected, onSelect, onStatus, onFastForward }: Props) {
+export function LiveRadar({ holes, placed, alertMin, orders, now, liveSince, selected, onSelect, onStatus, onFastForward, extraDots = [] }: Props) {
   const [mapFailed, setMapFailed] = useState(!PROVIDER);
   const onCourse = placed.filter((g) => g.at);
   const late = onCourse.filter((g) => g.behindMin > alertMin);
@@ -40,7 +43,8 @@ export function LiveRadar({ holes, placed, alertMin, orders, now, liveSince, sel
       label: `${g.group.name} · hole ${g.hole} · ${g.behindMin > 0 ? `+${g.behindMin} min` : 'on pace'}`,
     })),
     ...active.map((o) => ({ id: o.id, at: [o.lat, o.lng] as LL, kind: o.kind === 'hail' ? 'hail' as const : 'order' as const, label: `${o.kind === 'hail' ? 'Cart hail' : 'Order'} · ${o.player} · hole ${o.hole}` })),
-  ], [onCourse, active, alertMin]);
+    ...extraDots,
+  ], [onCourse, active, alertMin, extraDots]);
   const sel = placed.find((g) => g.group.id === selected);
   const elapsed = Math.max(0, Math.round((now - liveSince) / 60_000));
 
@@ -70,7 +74,7 @@ export function LiveRadar({ holes, placed, alertMin, orders, now, liveSince, sel
           )}
         </div>
         <div className={`${glass} absolute bottom-3 left-3 flex gap-3 rounded-xl px-3 py-1.5 text-[9px] font-bold uppercase tracking-widest text-white/60`}>
-          <Legend c="bg-emerald-500" t="On pace" /><Legend c="bg-red-500" t="Behind" /><Legend c="bg-amber-400" t="Order" /><Legend c="bg-sky-400" t="Hail" />
+          <Legend c="bg-emerald-500" t="On pace" /><Legend c="bg-red-500" t="Behind" /><Legend c="bg-amber-400" t="Order" /><Legend c="bg-sky-400" t="Hail" /><Legend c="bg-violet-400" t="Cart" />
         </div>
         {sel && (
           <div className={`${glass} absolute bottom-3 right-3 w-60 rounded-2xl p-3`} role="status">
@@ -110,7 +114,11 @@ export function LiveRadar({ holes, placed, alertMin, orders, now, liveSince, sel
 
 const Legend = ({ c, t }: { c: string; t: string }) => <span className="flex items-center gap-1"><span className={`h-2 w-2 rounded-full ${c}`} />{t}</span>;
 
-/** Offline / no-WebGL fallback: the same radar drawn as a vector plan of the course. */
+/**
+ * Offline / no-WebGL fallback: the same radar drawn as a vector plan of the course. Zoom and pan
+ * change only the SVG viewBox, and every pin is drawn in the same user-space coordinates as the
+ * holes, so pins cannot drift from their positions at any zoom level.
+ */
 function SvgRadar({ holes, dots, selected, onSelect }: { holes: { number: number; path: LL[] }[]; dots: RadarDot[]; selected: string | null; onSelect: (id: string) => void }) {
   const pts = holes.flatMap((h) => h.path);
   const [minLat, maxLat] = [Math.min(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[0]))];
@@ -119,19 +127,52 @@ function SvgRadar({ holes, dots, selected, onSelect }: { holes: { number: number
   const w = (maxLng - minLng) * k, h = maxLat - minLat;
   const xy = ([lat, lng]: LL) => [((lng - minLng) * k) / w * 1000, (maxLat - lat) / h * 1000 * (h / w)] as const;
   const H = 1000 * (h / w);
-  const color = { group: '#10b981', late: '#ef4444', order: '#fbbf24', hail: '#38bdf8' };
+  const home = { x: -60, y: -60, w: 1120, h: H + 120 };
+  const [vb, setVb] = useState(home);
+  const svg = useRef<SVGSVGElement>(null);
+  const drag = useRef<{ x: number; y: number; vb: typeof home } | null>(null);
+  const scale = home.w / vb.w; // >1 when zoomed in; keeps pin size constant on screen
+  const color = { group: '#10b981', late: '#ef4444', order: '#fbbf24', hail: '#38bdf8', cart: '#a78bfa', sos: '#dc2626' };
+
+  const zoomAt = (factor: number, cx = vb.x + vb.w / 2, cy = vb.y + vb.h / 2) => setVb((v) => {
+    const nw = Math.min(home.w, Math.max(home.w / 8, v.w / factor));
+    const f = nw / v.w;
+    return { x: cx - (cx - v.x) * f, y: cy - (cy - v.y) * f, w: nw, h: v.h * f };
+  });
+  const toUser = (clientX: number, clientY: number) => {
+    const r = svg.current!.getBoundingClientRect();
+    // preserveAspectRatio xMidYMid meet: uniform scale, centered
+    const s = Math.min(r.width / vb.w, r.height / vb.h);
+    return { x: vb.x + (clientX - r.left - (r.width - vb.w * s) / 2) / s, y: vb.y + (clientY - r.top - (r.height - vb.h * s) / 2) / s, s };
+  };
+  const onWheel = (e: RWE<SVGSVGElement>) => { const p = toUser(e.clientX, e.clientY); zoomAt(e.deltaY < 0 ? 1.25 : 0.8, p.x, p.y); };
+  const onDown = (e: RPE<SVGSVGElement>) => { if ((e.target as Element).closest('[data-radar-id]')) return; drag.current = { x: e.clientX, y: e.clientY, vb }; svg.current?.setPointerCapture(e.pointerId); };
+  const onMove = (e: RPE<SVGSVGElement>) => {
+    const d = drag.current; if (!d) return;
+    const s = toUser(e.clientX, e.clientY).s;
+    setVb({ ...d.vb, x: d.vb.x - (e.clientX - d.x) / s, y: d.vb.y - (e.clientY - d.y) / s });
+  };
+  const onUp = () => { drag.current = null; };
+
   return (
-    <svg viewBox={`-60 -60 1120 ${H + 120}`} className="h-full w-full bg-[radial-gradient(circle_at_center,#052e1f,#000)]" role="img" aria-label="Course radar">
-      {holes.map((hole) => <polyline key={hole.number} points={hole.path.map((p) => xy(p).join(',')).join(' ')} fill="none" stroke="#fff" strokeOpacity={0.3} strokeWidth={3} strokeDasharray="10 8" />)}
-      {dots.map((d) => {
-        const [x, y] = xy(d.at);
-        return (
-          <g key={d.id} onClick={() => onSelect(d.id)} className="cursor-pointer">
-            {d.kind === 'late' && <circle cx={x} cy={y} r={14} fill="none" stroke="#ef4444" strokeWidth={3}><animate attributeName="r" from="12" to="40" dur="1.6s" repeatCount="indefinite" /><animate attributeName="opacity" from="0.9" to="0" dur="1.6s" repeatCount="indefinite" /></circle>}
-            <circle cx={x} cy={y} r={selected === d.id ? 15 : 11} fill={color[d.kind]} stroke="#fff" strokeWidth={3} style={{ filter: `drop-shadow(0 0 8px ${color[d.kind]})` }}><title>{d.label}</title></circle>
-          </g>
-        );
-      })}
-    </svg>
+    <div className="relative h-full w-full">
+      <svg ref={svg} viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`} className="h-full w-full touch-none select-none bg-[radial-gradient(circle_at_center,#052e1f,#000)]" role="img" aria-label="Course radar" data-testid="svg-radar"
+        onWheel={onWheel} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
+        {holes.map((hole) => <polyline key={hole.number} points={hole.path.map((p) => xy(p).join(',')).join(' ')} fill="none" stroke="#fff" strokeOpacity={0.3} strokeWidth={3 / scale} strokeDasharray={`${10 / scale} ${8 / scale}`} />)}
+        {dots.map((d) => {
+          const [x, y] = xy(d.at);
+          const r = (selected === d.id ? 15 : d.kind === 'sos' ? 16 : 11) / scale;
+          return (
+            <g key={d.id} data-radar-id={d.id} role="button" aria-label={d.label} onClick={() => onSelect(d.id)} className="cursor-pointer">
+              {(d.kind === 'late' || d.kind === 'sos') && <circle cx={x} cy={y} r={14 / scale} fill="none" stroke={color[d.kind]} strokeWidth={3 / scale}><animate attributeName="r" from={12 / scale} to={40 / scale} dur="1.6s" repeatCount="indefinite" /><animate attributeName="opacity" from="0.9" to="0" dur="1.6s" repeatCount="indefinite" /></circle>}
+              {d.kind === 'cart' || d.kind === 'order' || d.kind === 'hail'
+                ? <rect x={x - r} y={y - r} width={2 * r} height={2 * r} rx={4 / scale} fill={color[d.kind]} stroke="#fff" strokeWidth={3 / scale} style={{ filter: `drop-shadow(0 0 8px ${color[d.kind]})` }}><title>{d.label}</title></rect>
+                : <circle cx={x} cy={y} r={r} fill={color[d.kind]} stroke="#fff" strokeWidth={3 / scale} style={{ filter: `drop-shadow(0 0 8px ${color[d.kind]})` }}><title>{d.label}</title></circle>}
+            </g>
+          );
+        })}
+      </svg>
+      <ZoomControls onIn={() => zoomAt(1.5)} onOut={() => zoomAt(1 / 1.5)} onFit={() => setVb(home)} />
+    </div>
   );
 }

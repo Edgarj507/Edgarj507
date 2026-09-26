@@ -12,6 +12,12 @@ export function OpsSettingsView({ settings, onChange, now }: { settings: OpsSett
       <Card icon={<Merge size={14} />} title="Tournament Mode">
         <Toggle label="In-House Tournament" sub="For courses hosting their own event: merge the Tee Sheet with the Pre-Event CRM / Live Radar into one Operations view"
           on={settings.inHouse} onChange={(v) => onChange({ inHouse: v })} />
+        {settings.inHouse ? (
+          <>
+            <Stepper label="Charity mulligan limit" unit="per player" value={settings.mulliganLimit} step={1} onChange={(v) => onChange({ mulliganLimit: v })} icon={<HandCoins size={12} />}
+              sub={settings.tournamentLive ? 'Mulligans are on sale now' : 'Mulligans go on sale when the tournament starts'} />
+          </>
+        ) : <p className="text-[10px] text-white/45">Charity mulligans are available only for in-house tournaments, while the event is live.</p>}
       </Card>
 
       <Card icon={<Gauge size={14} />} title="Pace of Play">
@@ -24,7 +30,6 @@ export function OpsSettingsView({ settings, onChange, now }: { settings: OpsSett
       <Card icon={<ToggleRight size={14} />} title="Master Toggles">
         <Toggle label="Hail Drink Cart" sub="Players can call the beverage cart to their GPS spot" on={settings.hailCart} onChange={(v) => onChange({ hailCart: v })} />
         <Toggle label="Live Ordering" sub="Clubhouse Store on player phones (food & pro shop)" on={settings.liveOrdering} onChange={(v) => onChange({ liveOrdering: v })} />
-        <Stepper label="Charity mulligan limit" unit="per player" value={settings.mulliganLimit} step={1} onChange={(v) => onChange({ mulliganLimit: v })} icon={<HandCoins size={12} />} />
       </Card>
 
       <Card icon={<Flag size={14} />} title="Golf Course Hours" badge={courseOpen ? 'Open now' : 'Closed now'} open={courseOpen}>

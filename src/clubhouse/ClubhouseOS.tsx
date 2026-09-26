@@ -1,16 +1,28 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { haptic } from '../lib/haptics';
-import { Bug, CalendarClock, ChefHat, ChevronRight, CircleHelp, History, LayoutDashboard, LifeBuoy, Lock, MapPinOff, Radar, Receipt, RotateCcw, Settings2, ShieldCheck, Trophy, Truck, X, type LucideIcon } from 'lucide-react';
+import { Bug, CalendarClock, Car, ChefHat, CloudLightning, Megaphone, MessageSquareText, Package, PhoneIncoming, ChevronRight, CircleHelp, History, LayoutDashboard, LifeBuoy, Lock, MapPinOff, Radar, Receipt, RotateCcw, Settings2, ShieldCheck, Trophy, Truck, X, type LucideIcon } from 'lucide-react';
 import { SOMERBY } from '../data/course';
 import { useOps } from '../ops/useOps';
-import { isOpenAt, isOpenOrder } from '../ops/model';
+import { charityOpen, isOpenAt, isOpenOrder } from '../ops/model';
 import { EVENTS } from '../tournaments/events';
+import { holePoint } from '../ops/carts';
+import { threadKey, type BroadcastKind } from '../ops/comms';
+import { newId } from '../ops/useOps';
+import { venueById } from '../ops/venues';
 import { useRole } from '../auth/RoleContext';
 // Everyday clubhouse operations
 import { TeeSheet } from './everyday/TeeSheet';
 import { OpsSettingsView } from './everyday/OpsSettingsView';
 import { EodReport } from './everyday/EodReport';
 import { SupportTickets } from './everyday/SupportTickets';
+import { BevCartView } from './everyday/BevCartView';
+import { MessagesView, threadsOf } from './everyday/MessagesView';
+import { BroadcastsView } from './everyday/BroadcastsView';
+import { StoreManager } from './everyday/StoreManager';
+import { PhoneOrderModal } from './everyday/PhoneOrderModal';
+import { WeatherHub } from '../weather/WeatherHub';
+import { SosAlarm } from './SosAlarm';
+import { Modal } from './ui';
 import { HelpCenter } from '../help/HelpCenter';
 import { BugReport } from '../support/BugReport';
 import { setDiagnosticView } from '../support/diagnostics';
@@ -24,7 +36,8 @@ import { Queue } from './Queue';
 import { ago, glass, hhmm } from './ui';
 import { useUndo } from './useUndo';
 
-type View = 'tee' | 'eod' | 'settings' | 'support' | 'tournament' | 'ops';
+type View = 'tee' | 'eod' | 'settings' | 'support' | 'tournament' | 'ops' | 'carts' | 'messages' | 'broadcasts' | 'store' | 'weather';
+const LABEL: Partial<Record<View, string>> = { tee: 'Tee Sheet', eod: 'End of Day', support: 'Support Tickets', settings: 'Settings', carts: 'Beverage Carts', messages: 'Messages', broadcasts: 'Broadcasts', store: 'Store & Inventory', weather: 'Weather' };
 
 const DEMO = !import.meta.env.VITE_SUPABASE_URL;
 
@@ -41,7 +54,8 @@ export function ClubhouseOS() {
   const { lockStaff, staffName } = useRole();
   const [ops, dispatch] = useOps('staff');
   const s = ops.settings;
-  const event = EVENTS[0];
+  const event = ops.events.find((e) => e.id === s.activeEventId) ?? ops.events[0] ?? EVENTS[0];
+  const home = venueById('somerby')!;
   const [view, setView] = useState<View>(() => (s.tournamentLive ? 'tournament' : 'tee'));
   const [clock, setClock] = useState(() => Date.now());
   const [selected, setSelected] = useState<string | null>(null);
@@ -50,6 +64,17 @@ export function ClubhouseOS() {
   const [report, setReport] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const { act, undo, history, snack, dismissSnack } = useUndo(ops, dispatch);
+  const [phoneOrder, setPhoneOrder] = useState(false);
+  const [cartId, setCartId] = useState(() => ops.carts[0]?.id ?? '');
+  const [cartMode, setCartMode] = useState(false);
+  const [thread, setThread] = useState<{ key: string; name: string } | null>(null);
+  const [cartChat, setCartChat] = useState(false);
+  const [preset, setPreset] = useState<{ kind: BroadcastKind; n: number }>({ kind: 'general', n: 0 });
+  const unreadMsgs = threadsOf(ops.messages).reduce((n, t) => n + t.unread, 0);
+  const openThread = (o: { name: string; phone?: string }) => ({ key: threadKey(o.phone, o.name), name: o.name });
+  const readThread = useCallback((t: string) => dispatch({ type: 'readThread', thread: t, by: 'staff' }), [dispatch]);
+  const cartName = useCallback((id: string) => ops.carts.find((c) => c.id === id)?.name ?? id, [ops.carts]);
+  const broadcastPreset = (kind: BroadcastKind) => { setPreset((p) => ({ kind, n: p.n + 1 })); setView('broadcasts'); };
 
   useEffect(() => { const id = setInterval(() => setClock(Date.now()), 5_000); return () => clearInterval(id); }, []);
   const live = useLiveEvent(ops, event.id, clock);
@@ -61,7 +86,7 @@ export function ClubhouseOS() {
   const tournament = current === 'tournament';
   const crumbs = current === 'tournament' ? ['Tournament', event.name, s.tournamentLive ? 'Live Radar' : 'Pre-Event CRM']
     : current === 'ops' ? ['Clubhouse', 'Operations', `In-house · ${s.tournamentLive ? 'Live' : 'Pre-event'}`]
-    : ['Clubhouse', current === 'tee' ? 'Tee Sheet' : current === 'eod' ? 'End of Day' : current === 'support' ? 'Support Tickets' : 'Settings'];
+    : ['Clubhouse', LABEL[current] ?? 'Settings'];
   useEffect(() => setDiagnosticView(`clubhouse/${current}`), [current]);
   const unresolved = ops.tickets.filter((t) => t.status !== 'resolved').length;
   const onStatus = (id: string, st: typeof ops.orders[number]['status'], label: string) => {
@@ -85,7 +110,11 @@ export function ClubhouseOS() {
   const tournamentView = s.tournamentLive && s.liveSince ? (
     <LiveRadar holes={live.holes} placed={live.placed} alertMin={s.paceAlertMin} orders={ops.orders} now={live.now} liveSince={s.liveSince}
       selected={selected} onSelect={select} onStatus={onStatus}
-      onFastForward={DEMO ? live.fastForward : undefined} />
+      onFastForward={DEMO ? live.fastForward : undefined}
+      extraDots={[
+        ...ops.carts.filter((c) => c.active).map((c) => ({ id: `cart:${c.id}`, at: holePoint(c.hole), kind: 'cart' as const, label: `${c.name} · hole ${c.hole}` })),
+        ...ops.sos.filter((a) => (a.status === 'active' || a.status === 'acknowledged') && a.lat != null && a.lng != null).map((a) => ({ id: `sos:${a.id}`, at: [a.lat!, a.lng!] as [number, number], kind: 'sos' as const, label: `SOS · ${a.name}` })),
+      ]} />
   ) : (
     <EventCRM event={event} regs={live.regs} details={ops.eventDetails[event.id]}
       onSave={(id, p) => act({ type: 'roster', id, ...p }, `Edited roster: ${p.teamName}`)}
@@ -112,12 +141,15 @@ export function ClubhouseOS() {
           <span role="status" className={`flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-widest ${kitchenOpen ? 'bg-emerald-500/10 text-emerald-300' : 'bg-red-500/10 text-red-300'}`}>
             <ChefHat size={11} /> Kitchen {kitchenOpen ? 'open' : 'closed'}
           </span>
+          <button onClick={() => setPhoneOrder(true)} aria-label="Phone-In Order" className="flex h-8 items-center gap-1.5 rounded-full border border-sky-300/40 bg-sky-400/10 px-3 text-[10px] font-bold uppercase tracking-widest text-sky-100">
+            <PhoneIncoming size={12} /> Phone-In<span className="hidden @7xl:inline"> Order</span>
+          </button>
           <button onClick={() => setQueueOpen(true)} className="relative flex h-8 items-center gap-1.5 rounded-full border border-white/15 bg-black/40 px-3 text-[10px] font-bold uppercase tracking-widest text-white/80">
             <Truck size={12} /> Orders
             {openOrders > 0 && <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-400 px-1 text-[9px] font-black text-black">{openOrders}</span>}
           </button>
           <button onClick={() => setHistoryOpen(true)} aria-label="Recent actions" className="relative flex h-8 items-center gap-1.5 rounded-full border border-white/15 bg-black/40 px-3 text-[10px] font-bold uppercase tracking-widest text-white/80">
-            <History size={12} /> History{history.length > 0 && <span className="font-mono text-white/50">{history.length}</span>}
+            <History size={12} /><span className="hidden @7xl:inline">History</span>{history.length > 0 && <span className="font-mono text-white/50">{history.length}</span>}
           </button>
           <button onClick={() => setReport(true)} aria-label="Report a problem" className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/40 text-white/80"><Bug size={14} /></button>
           <button onClick={() => setHelp(true)} aria-label="Help" className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/40 text-white/80"><CircleHelp size={15} /></button>
@@ -129,11 +161,16 @@ export function ClubhouseOS() {
 
       <div className="relative z-10 flex min-h-0 flex-1 gap-3 p-3">
         {/* ── Left rail: two clearly separated areas ── */}
-        <aside className="flex w-52 shrink-0 flex-col gap-3" aria-label="Clubhouse OS navigation">
+        <aside className="no-scrollbar flex w-52 shrink-0 flex-col gap-3 overflow-y-auto" aria-label="Clubhouse OS navigation">
           {s.inHouse ? (
             <section aria-label="Clubhouse operations" className={`${glass} rounded-2xl p-2`}>
               <SectionLabel dot={s.tournamentLive ? 'bg-red-500 animate-pulse' : 'bg-emerald-400'} title="Clubhouse" sub={`In-house tournament · ${event.name}`} />
               <NavItem icon={LayoutDashboard} label="Operations" active={current === 'ops'} onClick={() => setView('ops')} tone="emerald" badge={s.tournamentLive ? 'LIVE' : undefined} />
+              <NavItem icon={Car} label="Bev Carts" active={current === 'carts'} onClick={() => setView('carts')} tone="emerald" badge={ops.orders.filter((o) => o.cartId && isOpenOrder(o)).length ? String(ops.orders.filter((o) => o.cartId && isOpenOrder(o)).length) : undefined} />
+              <NavItem icon={MessageSquareText} label="Messages" active={current === 'messages'} onClick={() => setView('messages')} tone="emerald" badge={unreadMsgs ? String(unreadMsgs) : undefined} />
+              <NavItem icon={Megaphone} label="Broadcasts" active={current === 'broadcasts'} onClick={() => setView('broadcasts')} tone="emerald" />
+              <NavItem icon={CloudLightning} label="Weather" active={current === 'weather'} onClick={() => setView('weather')} tone="emerald" />
+              <NavItem icon={Package} label="Store" active={current === 'store'} onClick={() => setView('store')} tone="emerald" />
               <NavItem icon={Receipt} label="End of Day" active={current === 'eod'} onClick={() => setView('eod')} tone="emerald" />
               <NavItem icon={LifeBuoy} label="Support" active={current === 'support'} onClick={() => setView('support')} tone="emerald" badge={unresolved ? String(unresolved) : undefined} />
               <NavItem icon={Settings2} label="Settings" active={current === 'settings'} onClick={() => setView('settings')} tone="emerald" />
@@ -144,6 +181,11 @@ export function ClubhouseOS() {
               <section aria-label="Clubhouse operations" className={`${glass} rounded-2xl p-2`}>
                 <SectionLabel dot="bg-emerald-400" title="Clubhouse" sub="Everyday operations" />
                 <NavItem icon={CalendarClock} label="Tee Sheet" active={current === 'tee'} onClick={() => setView('tee')} tone="emerald" />
+                <NavItem icon={Car} label="Bev Carts" active={current === 'carts'} onClick={() => setView('carts')} tone="emerald" badge={ops.orders.filter((o) => o.cartId && isOpenOrder(o)).length ? String(ops.orders.filter((o) => o.cartId && isOpenOrder(o)).length) : undefined} />
+                <NavItem icon={MessageSquareText} label="Messages" active={current === 'messages'} onClick={() => setView('messages')} tone="emerald" badge={unreadMsgs ? String(unreadMsgs) : undefined} />
+                <NavItem icon={Megaphone} label="Broadcasts" active={current === 'broadcasts'} onClick={() => setView('broadcasts')} tone="emerald" />
+                <NavItem icon={CloudLightning} label="Weather" active={current === 'weather'} onClick={() => setView('weather')} tone="emerald" />
+                <NavItem icon={Package} label="Store" active={current === 'store'} onClick={() => setView('store')} tone="emerald" />
                 <NavItem icon={Receipt} label="End of Day" active={current === 'eod'} onClick={() => setView('eod')} tone="emerald" />
                 <NavItem icon={LifeBuoy} label="Support" active={current === 'support'} onClick={() => setView('support')} tone="emerald" badge={unresolved ? String(unresolved) : undefined} />
                 <NavItem icon={Settings2} label="Settings" active={current === 'settings'} onClick={() => setView('settings')} tone="emerald" />
@@ -165,6 +207,24 @@ export function ClubhouseOS() {
           {current === 'settings' && <OpsSettingsView settings={s} now={clock} onChange={(patch) => act({ type: 'setting', patch }, `Changed ${Object.keys(patch).join(', ')}`)} />}
           {current === 'support' && <SupportTickets tickets={ops.tickets} now={clock} onStatus={(id, status, note) => act({ type: 'ticketStatus', id, status, note }, `Ticket #${id.slice(0, 8).toUpperCase()} → ${status}`)} />}
           {current === 'tournament' && tournamentView}
+          {current === 'carts' && (
+            <BevCartView ops={ops} now={clock} cartId={cartId} onCartId={setCartId} onStatus={onStatus}
+              onCart={(id, patch) => act({ type: 'cartUpdate', id, patch }, `${cartName(id)}: ${patch.hole ? `at hole ${patch.hole}` : patch.active ? 'on duty' : 'off duty'}`)}
+              onAssign={(orderId, to) => act({ type: 'assignCart', orderId, cartId: to }, `Reassigned to ${cartName(to)}`)}
+              onMessage={(o) => { setThread(openThread(o)); setView('messages'); }}
+              onSos={(c) => { const [lat, lng] = holePoint(c.hole); dispatch({ type: 'sos', alert: { id: newId(), from: 'cart', name: c.name, hole: c.hole, lat, lng, at: Date.now(), status: 'active' } }); }}
+              onExit={undefined} />
+          )}
+          {current === 'carts' && (
+            <button onClick={() => setCartMode(true)} className="absolute bottom-3 right-3 rounded-full border border-violet-300/40 bg-violet-500/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-violet-100">Open cart mode (full screen)</button>
+          )}
+          {current === 'messages' && <MessagesView messages={ops.messages} now={clock} author={staffName ?? 'Clubhouse'} open={thread} onOpen={setThread} onSend={(m) => dispatch({ type: 'message', msg: m })} onRead={readThread} />}
+          {current === 'broadcasts' && <BroadcastsView key={preset.n} preset={preset.kind} broadcasts={ops.broadcasts} now={clock} author={staffName ?? 'Clubhouse'} eventId={event.id} onSend={(b) => { dispatch({ type: 'broadcast', broadcast: b }); haptic('success'); }} />}
+          {current === 'store' && (
+            <StoreManager menu={ops.menu} charityLive={charityOpen(s)} inHouse={s.inHouse}
+              onUpsert={(i, label) => act({ type: 'menuUpsert', item: i }, label)} onRemove={(i) => act({ type: 'menuRemove', sku: i.sku }, `Removed ${i.name}`)} />
+          )}
+          {current === 'weather' && <WeatherHub lat={home.lat} lng={home.lng} place={home.name} onBroadcast={broadcastPreset} />}
           {current === 'ops' && (
             <div className="grid h-full min-h-0 grid-cols-1 gap-3 @5xl:grid-cols-2" data-testid="unified-ops">
               <div className="@container min-h-0 overflow-y-auto" aria-label="Daily operations">{teeSheet}</div>
@@ -175,6 +235,31 @@ export function ClubhouseOS() {
         </main>
       </div>
 
+      {phoneOrder && (
+        <PhoneOrderModal ops={ops} onClose={() => setPhoneOrder(false)}
+          onSubmit={(o) => { dispatch({ type: 'order', order: o }); haptic('success'); setPhoneOrder(false); }} />
+      )}
+      {cartMode && (
+        <div className="absolute inset-0 z-[60] flex flex-col bg-zinc-950 p-3 @container" aria-label="Beverage Cart OS">
+          <BevCartView ops={ops} now={clock} cartId={cartId} onCartId={setCartId} onStatus={onStatus}
+            onCart={(id, patch) => act({ type: 'cartUpdate', id, patch }, `${cartName(id)} updated`)}
+            onAssign={(orderId, to) => act({ type: 'assignCart', orderId, cartId: to }, `Reassigned to ${cartName(to)}`)}
+            onMessage={(o) => { setThread(openThread(o)); setCartChat(true); }}
+            onSos={(c) => { const [lat, lng] = holePoint(c.hole); dispatch({ type: 'sos', alert: { id: newId(), from: 'cart', name: c.name, hole: c.hole, lat, lng, at: Date.now(), status: 'active' } }); }}
+            onExit={() => setCartMode(false)} />
+          {cartChat && (
+            <Modal title="Message golfer" wide onClose={() => setCartChat(false)}>
+              <div className="h-[60vh] @container">
+                <MessagesView messages={ops.messages} now={clock} author={cartName(cartId)} from="cart" open={thread} onOpen={setThread} onSend={(m) => dispatch({ type: 'message', msg: m })} onRead={readThread} />
+              </div>
+            </Modal>
+          )}
+        </div>
+      )}
+      <SosAlarm alerts={ops.sos} now={clock} staffName={staffName ?? 'Staff'}
+        onAck={(id) => { dispatch({ type: 'sosStatus', id, status: 'acknowledged', by: staffName ?? 'Staff' }); haptic('success'); }}
+        onResolve={(id) => dispatch({ type: 'sosStatus', id, status: 'resolved', by: staffName ?? 'Staff' })}
+        onMessage={(a) => { dispatch({ type: 'sosStatus', id: a.id, status: 'acknowledged', by: staffName ?? 'Staff' }); setThread(openThread({ name: a.name, phone: a.phone })); setCartMode(false); setView('messages'); }} />
       {help && <HelpCenter audience="staff" onClose={() => setHelp(false)} onReport={() => { setHelp(false); setReport(true); }} />}
       {report && <BugReport role="staff" reporter={staffName ?? 'Staff'} onSubmit={(t) => dispatch({ type: 'ticket', ticket: t })} onClose={() => setReport(false)} />}
       {snack && (
@@ -211,7 +296,7 @@ export function ClubhouseOS() {
               <h2 className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.2em]"><Truck size={13} /> Fulfillment Queue</h2>
               <button onClick={() => setQueueOpen(false)} aria-label="Close orders" className="grid h-8 w-8 place-items-center rounded-full bg-white/10"><X size={14} /></button>
             </div>
-            <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto"><Queue orders={ops.orders} now={clock} onStatus={onStatus} /></div>
+            <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto"><Queue orders={ops.orders} now={clock} onStatus={onStatus} cartName={cartName} /></div>
           </aside>
         </div>
       )}

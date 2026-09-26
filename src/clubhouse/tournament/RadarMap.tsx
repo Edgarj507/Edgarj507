@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { LngLatBounds, Map as MapLibre, Marker } from '../../map/maplibre';
 import type { FeatureCollection } from 'geojson';
 import type { ImageryProvider } from '../../map/providers';
+import { ZoomControls } from './ZoomControls';
 
 type LL = [number, number];
 
-export interface RadarDot { id: string; at: LL; label: string; kind: 'group' | 'late' | 'order' | 'hail' }
+export interface RadarDot { id: string; at: LL; label: string; kind: 'group' | 'late' | 'order' | 'hail' | 'cart' | 'sos' }
 
 interface Props {
   provider: ImageryProvider;
@@ -32,7 +33,7 @@ function courseFeatures(holes: Props['holes']): FeatureCollection {
 export default function RadarMap({ provider, holes, dots, selected, onSelect, onFail }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibre | null>(null);
-  const markers = useRef(new Map<string, { m: Marker; node: HTMLDivElement }>());
+  const markers = useRef(new Map<string, { m: Marker; node: HTMLDivElement; dot: HTMLDivElement }>());
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -78,7 +79,11 @@ export default function RadarMap({ provider, holes, dots, selected, onSelect, on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider.id]);
 
-  // Sync DOM markers with the dots (labels set via textContent — no HTML injection).
+  // Sync DOM markers with the dots (labels set via attributes — no HTML injection).
+  // Pin-drift fix: MapLibre owns the OUTER element (class `maplibregl-marker`, absolute position
+  // + a transform anchored to the marker's LngLat). Our styling lives on an INNER element, so
+  // replacing classes never strips MapLibre's positioning and pins stay locked to their
+  // coordinates at every zoom level and while panning.
   useEffect(() => {
     const m = map.current;
     if (!m || !ready) return;
@@ -88,21 +93,31 @@ export default function RadarMap({ provider, holes, dots, selected, onSelect, on
       let entry = markers.current.get(d.id);
       if (!entry) {
         const node = document.createElement('div');
+        const dot = document.createElement('div');
+        node.appendChild(dot);
         node.addEventListener('click', (e) => { e.stopPropagation(); onSelect?.(d.id); });
-        entry = { m: new Marker({ element: node }).setLngLat(lngLat(d.at)).addTo(m), node };
+        entry = { m: new Marker({ element: node, anchor: 'center' }).setLngLat(lngLat(d.at)).addTo(m), node, dot };
         markers.current.set(d.id, entry);
       }
       entry.m.setLngLat(lngLat(d.at));
-      entry.node.className = `eg-radar-dot eg-radar-${d.kind}${selected === d.id ? ' eg-radar-sel' : ''}`;
+      entry.dot.className = `eg-radar-dot eg-radar-${d.kind}${selected === d.id ? ' eg-radar-sel' : ''}`;
       entry.node.setAttribute('role', 'button');
       entry.node.setAttribute('aria-label', d.label);
+      entry.node.dataset.radarId = d.id;
       entry.node.title = d.label;
-      entry.node.dataset.label = d.kind === 'order' || d.kind === 'hail' ? '' : d.label.split(' ·')[0];
+      entry.dot.dataset.label = d.kind === 'order' || d.kind === 'hail' ? '' : d.label.split(' ·')[0];
     }
     for (const [id, e] of markers.current) if (!seen.has(id)) { e.m.remove(); markers.current.delete(id); }
   }, [dots, ready, selected, onSelect]);
 
-  return <div ref={el} className="h-full w-full bg-neutral-950 [&_.maplibregl-canvas]:[filter:brightness(0.75)_contrast(1.25)_saturate(0.8)]" />;
+  const zoom = (dz: number) => map.current?.easeTo({ zoom: map.current.getZoom() + dz, duration: 250 });
+  const fit = () => map.current?.fitBounds(bounds(holes), { padding: 40, duration: 300 });
+  return (
+    <div className="relative h-full w-full">
+      <div ref={el} data-testid="radar-map" className="h-full w-full bg-neutral-950 [&_.maplibregl-canvas]:[filter:brightness(0.75)_contrast(1.25)_saturate(0.8)]" />
+      <ZoomControls onIn={() => zoom(1)} onOut={() => zoom(-1)} onFit={fit} />
+    </div>
+  );
 }
 
 function bounds(holes: Props['holes']) {
