@@ -172,6 +172,28 @@ Migration: `supabase/migrations/20260925010000_pin_tracking.sql`. Tests: `supaba
 
 **In-House Tournament mode** (`settings.inHouse`) only changes the Clubhouse OS layout. It merges the tee sheet with the CRM / Live Radar; the privacy rules in section 9 are unchanged.
 
+## 11. Security audit (Sep 2026) — findings & fixes
+
+| # | Severity | Finding | Status |
+|---|---|---|---|
+| 1 | **Critical** | **Staff access is client-only.** The Clubhouse OS runs off the local ops store (`useOps`) in *both* modes; the role is set in memory by `RoleContext`. The staff PIN is created on first use on any device, so a player could create a PIN on their own phone and open the Clubhouse OS. | **Partly fixed.** In cloud mode, `StaffPortal` now requires a signed-in account with a `staff_members` row (checked on the server under RLS) before a PIN can be created or used. **Still open:** the Clubhouse OS still reads and writes the local ops store instead of the RLS-protected tables; wiring it to them is the next backend task. Demo mode remains local by design. |
+| 2 | **High** | **Client-side tampering (demo store).** `order.total`, `registration.paid`, `pay` and `register` come from the client. | **Server-side protection exists:** `price_order()` recomputes totals, and `paid` is service-role only (payment webhook). Demo-only elsewhere; resolved together with #1. |
+| 3 | **High** | **Geofence was a bounding box on the server.** Positions anywhere in the box were accepted, and nothing stopped teleporting, rapid-fire or low-accuracy fixes. | **Fixed:** `on_property()` checks the exact course outline plus a 76.2 m (250 ft) buffer. `check_position()` rejects more than one fix per 3 s, speeds above 25 m/s, and accuracy worse than 100 m. Fixes are accepted only within 12 h of the event going live, and `purge_stale_positions()` deletes positions by the end of the event day. **Limitation:** GPS can't be proven genuine; this limits spoofing, it doesn't eliminate it. |
+| 4 | Medium | **Order/hail spam and unknown courses.** | **Fixed:** at most 5 open orders and 1 open hail per player (`limit_open_orders`); `unknown_course` is rejected. |
+| 5 | Medium | **Player cancel had no server rule.** | **Fixed:** policy `orders_player_cancel` allows only their own order, only while `new`, within 2 minutes, and only to `cancelled`. |
+| 6 | Medium | **Self check-in.** Captains can update their own registration row. | **Fixed:** the `guard_checkin` trigger makes `checked_in_at` staff-only. |
+| 7 | Low | **`mailto:`/`tel:` injection.** `EMAIL_RE` allows `?` and `&`, so `a?cc=x@evil.com` could add recipients. | **Fixed:** links now use `encodeURIComponent`. |
+| 8 | Low | **CSV formula injection** in the End of Day export. | **Fixed:** `csvCell()` prefixes `= + - @` values. |
+| 9 | Info | **XSS.** No `dangerouslySetInnerHTML`; React escapes all user text; MapLibre labels use `textContent`; SVG uploads are refused; flyers open as typed blobs. Team names, notes, tickets and organizer text are sanitized and have `<>` checks in the database. | No issue found. |
+
+**Support tickets:**
+- Reporters can't set a ticket's status; only course staff can change status or notes.
+- Each reporter is limited to 10 tickets per day.
+- Diagnostics are capped at 12 KB, and personal data and secrets are scrubbed from them on the device.
+- Screenshots are re-encoded through a canvas, which strips EXIF/GPS metadata.
+
+**Undo:** staff corrections are recorded with their inverse action (`inverseOf`). Starting or ending a tournament is intentionally not undoable, because it starts or stops location sharing.
+
 ## Deploying
 ```bash
 supabase link --project-ref <ref>

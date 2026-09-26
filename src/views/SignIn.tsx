@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { haptic } from '../lib/haptics';
 import { Lock, Mail, Phone, ScanFace, Target, UserRound, WifiOff } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { biometricAvailable, enroll, isEnrolled, verify } from '../lib/webauthn';
@@ -31,7 +32,7 @@ export function SignIn() {
   const [agreeErr, setAgreeErr] = useState(false);
   const consentOk = () => {
     if (!needsConsent) return true;
-    if (!agreed) { setAgreeErr(true); return false; }
+    if (!agreed) { setAgreeErr(true); haptic('error'); return false; }
     accept(['tos', 'privacy', 'waiver'], 'signup');
     return true;
   };

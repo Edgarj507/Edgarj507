@@ -1,4 +1,5 @@
 import { lazy, Suspense, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { haptic } from '../lib/haptics';
 import { ArrowDown, ArrowUp, Aperture, Car, CircleHelp, Check, ChevronLeft, BadgeCheck, ChevronRight, Cloud, CloudOff, Flag, HandCoins, HeartHandshake, ShoppingBag, Users, RotateCcw, ShieldHalf, Volume2, VolumeX } from 'lucide-react';
 import { MapPlaceholder } from './MapPlaceholder';
 import { imageryProvider } from '../map/providers';
@@ -18,7 +19,7 @@ import { ShotModal } from './ShotModal';
 import { MulliganSheet } from './MulliganSheet';
 import { StoreSheet } from './StoreSheet';
 import { useOps, newId } from '../ops/useOps';
-import { mulligansBought, type OrderItem } from '../ops/model';
+import { CANCEL_WINDOW_MS, isOpenOrder, mulligansBought, type OrderItem } from '../ops/model';
 import { MULLIGAN } from '../ops/menu';
 import type { TelemetryStatus } from '../ops/useTelemetry';
 import { caddiePhrase, speak, speechAvailable } from '../lib/voiceCaddie';
@@ -148,7 +149,7 @@ export function CaddieHud({
     setPicking(false);
     onLog({ club: club.label, line: lineYds, playsLike: target, t: Date.now(), ...(outcome ? { outcome } : {}), ...(isScramble ? { by: ballBy } : {}) });
     setJustLogged(true);
-    navigator.vibrate?.(15);
+    haptic('tap');
   };
 
   // AI voice caddie: announce the numbers whenever the lie changes (new shot or hole).
@@ -168,18 +169,24 @@ export function CaddieHud({
   };
 
   // On-course commerce: every order/hail is tagged with the hole and the ball's GPS position.
-  const placeOrder = (items: OrderItem[], kind: 'order' | 'hail' = 'order') =>
-    opsDispatch({ type: 'order', order: { id: newId(), kind, createdAt: Date.now(), player: playerName, hole: hole.number, lat: ball.lat, lng: ball.lng, items, total: items.reduce((a, i) => a + i.price * i.qty, 0), status: 'new' } });
+  const placeOrder = (items: OrderItem[], kind: 'order' | 'hail' = 'order') => {
+    const id = newId();
+    opsDispatch({ type: 'order', order: { id, kind, createdAt: Date.now(), player: playerName, hole: hole.number, lat: ball.lat, lng: ball.lng, items, total: items.reduce((a, i) => a + i.price * i.qty, 0), status: 'new' } });
+    return id;
+  };
+  // Fault tolerance: a player can undo an order/hail while it's still new, within 2 minutes.
+  const cancelOrder = (id: string) => opsDispatch({ type: 'cancel', id, player: playerName, at: Date.now() });
   const onStorePlace = (items: OrderItem[]) => {
-    placeOrder(items);
+    const id = placeOrder(items);
     const mulls = items.filter((i) => i.sku === MULLIGAN.sku).reduce((a, i) => a + i.qty, 0);
     if (mulls) onBuyMulligans?.(mulls, MULLIGAN.price);
+    return id;
   };
   const hail = () => {
     if (!ops.settings.hailCart) return;
     placeOrder([], 'hail');
     setHailed(true);
-    navigator.vibrate?.(20);
+    haptic('success');
   };
   useEffect(() => {
     if (!hailed) return;
@@ -187,7 +194,7 @@ export function CaddieHud({
     return () => clearTimeout(id);
   }, [hailed]);
   // Surface the order that's moving first (en route beats received).
-  const mine = ops.orders.filter((o) => o.player === playerName && o.status !== 'completed');
+  const mine = ops.orders.filter((o) => o.player === playerName && isOpenOrder(o));
   const myActive = mine.find((o) => o.status === 'enroute') ?? mine[0];
   const myMulls = mulligansBought(ops.orders, playerName, Date.now());
 
@@ -358,6 +365,9 @@ export function CaddieHud({
               <span role="status" className={`${glass} flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold ${myActive.status === 'enroute' ? 'text-emerald-300' : 'text-white/70'}`}>
                 <span className={`h-1.5 w-1.5 rounded-full ${myActive.status === 'enroute' ? 'animate-pulse bg-emerald-400' : 'bg-amber-300'}`} />
                 {myActive.kind === 'hail' ? 'Cart' : 'Order'} · {myActive.status === 'enroute' ? 'En route' : 'Received'}
+                {myActive.status === 'new' && Date.now() - myActive.createdAt < CANCEL_WINDOW_MS && (
+                  <button onClick={() => { cancelOrder(myActive.id); haptic('warning'); }} aria-label={`Undo ${myActive.kind === 'hail' ? 'cart hail' : 'order'}`} className="pointer-events-auto ml-1 rounded-full bg-white/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-amber-200">Undo</button>
+                )}
               </span>
             ) : <span />}
             <div className="pointer-events-auto flex flex-col gap-1.5" aria-label="Course services">
@@ -452,7 +462,7 @@ export function CaddieHud({
         <MulliganSheet ledger={ledger} players={players} onUse={onMulligan} onUndo={onUnmulligan} onClose={() => setMullOpen(false)} />
       )}
       {store && (
-        <StoreSheet mode={store} settings={ops.settings} hole={hole.number} mulligansBought={myMulls} onPlace={onStorePlace} onClose={() => setStore(null)} />
+        <StoreSheet mode={store} settings={ops.settings} hole={hole.number} mulligansBought={myMulls} onPlace={onStorePlace} onCancel={cancelOrder} onClose={() => setStore(null)} />
       )}
       {puttView && (
         <PuttView lie={{ ...lie, pin: pinYds }} holeNumber={hole.number} onClose={() => setPuttView(false)} onConfirmCup={pins.report} />

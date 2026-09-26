@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ChevronLeft, Search, Check, Wind, Sun, Trophy, Users, MapPin,
   Target, ChevronRight, Briefcase, Share2, QrCode, UserPlus, ScanLine,
@@ -29,6 +29,8 @@ import { Tournaments } from './tournaments/Tournaments';
 import { TrackingNotice } from './views/TrackingNotice';
 import { HelpCenter } from './help/HelpCenter';
 import { isOnboarded, Onboarding } from './help/Onboarding';
+import { BugReport } from './support/BugReport';
+import { setDiagnosticView } from './support/diagnostics';
 import { useOps } from './ops/useOps';
 import { useTelemetry } from './ops/useTelemetry';
 import { normalizePhone } from './lib/sms';
@@ -94,6 +96,7 @@ export default function App() {
   });
   const [staffGate, setStaffGate] = useState(false);
   const [help, setHelp] = useState(false);
+  const [report, setReport] = useState(false);
   const [tutorial, setTutorial] = useState(() => !isOnboarded());
   const { t, d, u } = usePrefs();
   const roundVisibility: Visibility = courseSetup.visibility ?? auth.profile.stats_visibility;
@@ -642,6 +645,7 @@ export default function App() {
   });
 
   const gated = auth.status === 'loading' || auth.status === 'signedOut';
+  useEffect(() => setDiagnosticView(gated ? 'player/sign-in' : `player/${currentView}`), [gated, currentView]);
 
   // Top-level RBAC switch: a staff session renders only the landscape Clubhouse OS; the player app
   // (and its data) is not mounted, and players never mount the Clubhouse OS.
@@ -725,7 +729,7 @@ export default function App() {
               {currentView === 'bag' && <BagWizard bag={bag} gear={gear} setGear={setGear} setCarry={setCarry} resetCarry={resetCarry} onExit={() => setCurrentView('menu')} />}
               {currentView === 'friends' && ViewFriends()}
               {currentView === 'profile' && <ProfileView onBack={() => setCurrentView('settings')} />}
-              {currentView === 'settings' && <SettingsView onBack={() => setCurrentView('menu')} onProfile={() => setCurrentView('profile')} onCourses={() => setCurrentView('courses')} onHelp={() => setHelp(true)} onTutorial={() => setTutorial(true)} />}
+              {currentView === 'settings' && <SettingsView onBack={() => setCurrentView('menu')} onProfile={() => setCurrentView('profile')} onCourses={() => setCurrentView('courses')} onHelp={() => setHelp(true)} onTutorial={() => setTutorial(true)} onReport={() => setReport(true)} />}
               {currentView === 'courses' && (
                 <CourseSetup
                   signedIn={auth.status === 'signedIn'}
@@ -775,7 +779,8 @@ export default function App() {
         )}
         {staffGate && <StaffPortal onClose={() => setStaffGate(false)} />}
         {!gated && tutorial && <Onboarding onDone={() => setTutorial(false)} />}
-        {help && <HelpCenter audience="player" onClose={() => setHelp(false)} onTutorial={() => { setHelp(false); setTutorial(true); }} />}
+        {help && <HelpCenter audience="player" onClose={() => setHelp(false)} onTutorial={() => { setHelp(false); setTutorial(true); }} onReport={() => { setHelp(false); setReport(true); }} />}
+        {report && <BugReport role="player" reporter={auth.profile.display_name} onSubmit={(t) => opsDispatch({ type: 'ticket', ticket: t })} onClose={() => setReport(false)} />}
       </div>
     </div>
   );

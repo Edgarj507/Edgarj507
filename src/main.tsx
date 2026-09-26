@@ -6,6 +6,11 @@ import { RoleProvider } from './auth/RoleContext';
 import { PrefsProvider } from './i18n/prefs';
 import { CourseLibraryProvider } from './courses/CourseLibrary';
 import './index.css';
+import { installErrorCapture } from './support/diagnostics';
+import { installHaptics } from './lib/haptics';
+
+installErrorCapture();
+installHaptics();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

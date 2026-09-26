@@ -1,8 +1,24 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { haptic } from '../lib/haptics';
 import { Delete, Lock, ScanFace, ShieldCheck, X } from 'lucide-react';
 import { createStaffPin, PIN_RE } from '../lib/staffPin';
 import { biometricAvailable, enroll, isEnrolled, verify } from '../lib/webauthn';
 import { useRole } from '../auth/RoleContext';
+import { supabase } from '../lib/supabase';
+
+/**
+ * Cloud mode: the PIN / Face ID only unlocks this *device*; the account must also be a staff
+ * member on the server (staff_members, readable only for your own user by RLS). A PIN created on
+ * a player's phone therefore can't open the Clubhouse OS.
+ */
+async function serverStaffCheck(): Promise<string | null> {
+  if (!supabase) return null; // demo mode: local only (see SECURITY.md)
+  const { data: session } = await supabase.auth.getSession();
+  if (!session.session) return 'Sign in with your staff account first.';
+  const { data, error } = await supabase.from('staff_members').select('course_name').limit(1);
+  if (error) return 'Could not verify staff access. Try again.';
+  return data?.length ? null : 'This account is not registered as course staff.';
+}
 
 const pinStore = createStaffPin(localStorage);
 
@@ -28,7 +44,9 @@ export function StaffPortal({ onClose }: { onClose: () => void }) {
     return () => clearInterval(id);
   }, [lockedFor]);
 
-  const done = () => {
+  const done = async () => {
+    const denied = await serverStaffCheck();
+    if (denied) { setMsg(denied); setPin(''); return; }
     if (bio && !isEnrolled('staff')) setOfferEnroll(true);
     else unlockStaff('Staff');
   };
@@ -36,6 +54,8 @@ export function StaffPortal({ onClose }: { onClose: () => void }) {
   const submit = async (p: string) => {
     setMsg(null);
     if (setup) {
+      // Cloud: only verified staff accounts may create a device PIN.
+      if (!first) { const denied = await serverStaffCheck(); if (denied) { setPin(''); setMsg(denied); return; } }
       if (!first) { setFirst(p); setPin(''); setMsg('Enter the same PIN again'); return; }
       if (first !== p) { setFirst(null); setPin(''); setMsg('PINs didn’t match. Start again.'); return; }
       await pinStore.set(p);
@@ -46,7 +66,7 @@ export function StaffPortal({ onClose }: { onClose: () => void }) {
     if (r === 'ok') return done();
     setLockedFor(pinStore.lockedFor());
     setMsg(r === 'locked' ? 'Too many attempts.' : 'Incorrect PIN');
-    navigator.vibrate?.([40, 40, 40]);
+    haptic('error');
   };
 
   const press = (d: string) => {
@@ -57,8 +77,10 @@ export function StaffPortal({ onClose }: { onClose: () => void }) {
   };
 
   const faceId = async () => {
-    if (await verify('staff')) unlockStaff('Staff');
-    else setMsg('Face ID not recognised for staff');
+    if (!(await verify('staff'))) return setMsg('Face ID not recognised for staff');
+    const denied = await serverStaffCheck();
+    if (denied) return setMsg(denied);
+    unlockStaff('Staff');
   };
 
   if (offerEnroll) {

@@ -42,7 +42,7 @@ const FAQ: Record<HelpAudience, Entry[]> = {
 };
 
 /** Interactive help center: quick-reference guides, searchable FAQ and support contacts. */
-export function HelpCenter({ audience, onClose, onTutorial }: { audience: HelpAudience; onClose: () => void; onTutorial?: () => void }) {
+export function HelpCenter({ audience, onClose, onTutorial, onReport }: { audience: HelpAudience; onClose: () => void; onTutorial?: () => void; onReport?: () => void }) {
   const [tab, setTab] = useState<'guides' | 'faq' | 'contact'>('guides');
   const [q, setQ] = useState('');
   const [open, setOpen] = useState<string | null>(null);
@@ -87,10 +87,15 @@ export function HelpCenter({ audience, onClose, onTutorial }: { audience: HelpAu
               <a href="tel:+15075550199" className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3">
                 <Phone size={16} className="text-emerald-400" /><span className="flex flex-col"><b className="text-[12px] text-white">{staff ? 'Exclusive.Golf course success' : 'Call the pro shop'}</b><span className="text-[10px] text-white/50">(507) 555-0199 · demo number</span></span>
               </a>
-              <a href={`mailto:support@exclusive.golf?subject=${encodeURIComponent('Problem report')}&body=${encodeURIComponent(`What happened:\n\nApp: ${staff ? 'Clubhouse OS' : 'Player App'}\nDevice: ${typeof navigator !== 'undefined' ? navigator.userAgent : ''}`)}`}
-                className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3">
-                <MessageCircleQuestion size={16} className="text-emerald-400" /><span className="flex flex-col"><b className="text-[12px] text-white">Report a problem</b><span className="text-[10px] text-white/50">Opens an email with your device details</span></span>
-              </a>
+              {onReport ? (
+                <button onClick={onReport} className="flex items-center gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-3 text-left">
+                  <MessageCircleQuestion size={16} className="text-emerald-400" /><span className="flex flex-col"><b className="text-[12px] text-white">Support & Bug Report</b><span className="text-[10px] text-white/50">Describe the issue, attach a screenshot — diagnostics are added automatically</span></span>
+                </button>
+              ) : (
+                <a href={`mailto:support@exclusive.golf?subject=${encodeURIComponent('Problem report')}`} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+                  <MessageCircleQuestion size={16} className="text-emerald-400" /><span className="flex flex-col"><b className="text-[12px] text-white">Report a problem</b><span className="text-[10px] text-white/50">Opens an email</span></span>
+                </a>
+              )}
             </div>
           ) : (
             <ul className="flex flex-col gap-1.5">

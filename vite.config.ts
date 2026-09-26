@@ -47,6 +47,8 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_');
   guardClientEnv(env);
   return {
+    // App version for bug-report diagnostics (only the version string is bundled, not package.json).
+    define: { __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? '0.0.0') },
     plugins: [
       react(),
       tailwindcss(),

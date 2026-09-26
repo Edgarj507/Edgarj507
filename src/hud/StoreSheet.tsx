@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { haptic } from '../lib/haptics';
 import { ChefHat, HandCoins, HeartHandshake, Lock, Minus, Plus, ScanFace, ShoppingBag, X } from 'lucide-react';
 import { MENU, MULLIGAN, cartTotal } from '../ops/menu';
 import { fmtTime, isOpenAt, type OpsSettings, type OrderItem } from '../ops/model';
@@ -10,7 +11,8 @@ interface Props {
   hole: number;
   /** Charity mulligans this player already bought in this event window. */
   mulligansBought: number;
-  onPlace: (items: OrderItem[]) => void;
+  onPlace: (items: OrderItem[]) => string;
+  onCancel: (id: string) => void;
   onClose: () => void;
 }
 
@@ -18,11 +20,13 @@ interface Props {
  * Clubhouse Store (F&B + Pro Shop) and the Charity/Event Store. Purchases are confirmed with
  * Face ID on enrolled devices; the organizer's mulligan limit caps the charity quantity.
  */
-export function StoreSheet({ mode, settings, hole, mulligansBought, onPlace, onClose }: Props) {
+export function StoreSheet({ mode, settings, hole, mulligansBought, onPlace, onCancel, onClose }: Props) {
   const [qty, setQty] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [placed, setPlaced] = useState(false);
+  const [orderId, setOrderId] = useState<string | null>(null);
+  const [undone, setUndone] = useState(false);
 
   const charity = mode === 'charity';
   const catalog = charity ? [MULLIGAN] : MENU;
@@ -44,10 +48,10 @@ export function StoreSheet({ mode, settings, hole, mulligansBought, onPlace, onC
     setBusy(true);
     const ok = !face || (await verify('player'));
     setBusy(false);
-    if (!ok) return setErr('Face ID didn’t confirm the purchase.');
-    onPlace(items);
+    if (!ok) { haptic('error'); return setErr('Face ID didn’t confirm the purchase.'); }
+    setOrderId(onPlace(items));
     setPlaced(true);
-    navigator.vibrate?.(20);
+    haptic('success');
   };
 
   return (
@@ -74,6 +78,10 @@ export function StoreSheet({ mode, settings, hole, mulligansBought, onPlace, onC
             <span className="text-2xl">{charity ? '🎗️' : '🛺'}</span>
             <div className="text-sm font-bold text-white">{charity ? 'Mulligans added to your ledger' : 'Order sent to the clubhouse'}</div>
             <div className="text-[11px] text-white/50">{charity ? 'Thank you for supporting the Kid’s Cup.' : `The cart will find you on hole ${hole}.`}</div>
+            {!charity && orderId && !undone && (
+              <button onClick={() => { onCancel(orderId); setUndone(true); haptic('warning'); }} className="mt-2 h-10 w-full rounded-2xl border border-amber-300/40 bg-amber-300/10 text-[11px] font-black uppercase tracking-widest text-amber-100">Undo order</button>
+            )}
+            {undone && <p role="status" className="text-[11px] text-amber-200">Order cancelled — nothing will be delivered.</p>}
             <button onClick={onClose} className="mt-3 h-10 w-full rounded-2xl bg-white/10 text-[11px] font-bold uppercase tracking-widest text-white">Back to round</button>
           </div>
         ) : closed ? (

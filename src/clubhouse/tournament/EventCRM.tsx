@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
-import { ImagePlus, BadgeDollarSign, Banknote, ChevronRight, Mail, MessageSquareText, Pencil, Search, ShieldCheck, Trophy, UserMinus, Users } from 'lucide-react';
+import { ImagePlus, UserCheck, BadgeDollarSign, Banknote, ChevronRight, Mail, MessageSquareText, Pencil, Search, ShieldCheck, Trophy, UserMinus, Users } from 'lucide-react';
 import { type EventBanner, type EventDetails, balance, blankContact, filledCount, isOpenSlot, validateTeam, type Contact, type Registration } from '../../ops/model';
 import { smsGroupLink } from '../../lib/sms';
 import type { EventInfo } from '../../tournaments/events';
 import { field, glass, Panel, Stat } from '../ui';
 import { EventPageEditor } from './EventPageEditor';
 
-type Filter = 'all' | 'balance' | 'open';
+type Filter = 'all' | 'balance' | 'open' | 'notin';
 export interface RosterPatch { teamName: string; captain: Contact; roster: Registration['roster'] }
 
 interface Props {
@@ -14,6 +14,7 @@ interface Props {
   regs: Registration[];
   onSave: (id: string, p: RosterPatch) => void;
   onMarkPaid: (id: string, amount: number) => void;
+  onCheckIn: (id: string, checkedIn: boolean, team: string) => void;
   details?: EventDetails;
   onSaveDetails: (p: { text: string; banner: EventBanner | null }) => void;
 }
@@ -22,7 +23,7 @@ interface Props {
  * Pre-Tournament CRM. Deliberately map-free: before the event nobody's location is tracked or shown.
  * Rosters, payments and contact details only.
  */
-export function EventCRM({ event, regs, onSave, onMarkPaid, details, onSaveDetails }: Props) {
+export function EventCRM({ event, regs, onSave, onMarkPaid, onCheckIn, details, onSaveDetails }: Props) {
   const [editPage, setEditPage] = useState(false);
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -31,6 +32,7 @@ export function EventCRM({ event, regs, onSave, onMarkPaid, details, onSaveDetai
   const rows = useMemo(() => regs.filter((r) => {
     if (filter === 'balance' && !balance(r)) return false;
     if (filter === 'open' && filledCount(r) === 4) return false;
+    if (filter === 'notin' && r.checkedInAt) return false;
     const s = q.trim().toLowerCase();
     return !s || `${r.teamName} ${r.captain.first} ${r.captain.last}`.toLowerCase().includes(s);
   }), [regs, q, filter]);
@@ -56,6 +58,7 @@ export function EventCRM({ event, regs, onSave, onMarkPaid, details, onSaveDetai
           <Stat label="Players" value={`${players}/${regs.length * 4}`} />
           <Stat label="Collected" value={`$${collected.toLocaleString()}`} tone="green" />
           <Stat label="Outstanding" value={`$${outstanding.toLocaleString()}`} tone={outstanding ? 'amber' : undefined} />
+          <Stat label="Checked in" value={`${regs.filter((r) => r.checkedInAt).length}/${regs.length}`} tone="green" />
           <span className="ml-auto flex items-center gap-1 text-[10px] text-white/40"><ShieldCheck size={12} className="text-emerald-400" /> No locations shown before the event starts</span>
         </div>
         <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -63,13 +66,13 @@ export function EventCRM({ event, regs, onSave, onMarkPaid, details, onSaveDetai
             <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search team or captain" aria-label="Search teams" className={`${field} py-2 pl-8`} />
           </label>
-          {([['all', 'All'], ['balance', 'Balance due'], ['open', 'Open slots']] as const).map(([id, label]) => (
+          {([['all', 'All'], ['balance', 'Balance due'], ['open', 'Open slots'], ['notin', 'Not checked in']] as const).map(([id, label]) => (
             <button key={id} onClick={() => setFilter(id)} aria-pressed={filter === id} className={`rounded-full border px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest ${filter === id ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-300' : 'border-white/10 text-white/50'}`}>{label}</button>
           ))}
         </div>
         <table className="w-full text-left text-[12px]">
           <thead className="text-[9px] uppercase tracking-widest text-white/40">
-            <tr><th className="px-3 py-2 font-bold">Team</th><th className="py-2 font-bold">Captain</th><th className="py-2 font-bold">Players</th><th className="py-2 font-bold">Payment</th><th /></tr>
+            <tr><th className="px-3 py-2 font-bold">Team</th><th className="py-2 font-bold">Captain</th><th className="py-2 font-bold">Players</th><th className="py-2 font-bold">Payment</th><th className="py-2 font-bold">Check-in</th><th /></tr>
           </thead>
           <tbody>
             {rows.map((r) => {
@@ -83,6 +86,12 @@ export function EventCRM({ event, regs, onSave, onMarkPaid, details, onSaveDetai
                   <td className="py-2.5">
                     {due ? <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-[10px] font-bold text-amber-200">Partially Paid · ${due} due</span>
                       : <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300">Fully Paid</span>}
+                  </td>
+                  <td className="py-2.5" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => onCheckIn(r.id, !r.checkedInAt, r.teamName)} aria-pressed={!!r.checkedInAt} aria-label={`${r.checkedInAt ? 'Undo check-in' : 'Check in'} ${r.teamName}`}
+                      className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest ${r.checkedInAt ? 'bg-emerald-500 text-black' : 'border border-white/15 text-white/60'}`}>
+                      <UserCheck size={11} /> {r.checkedInAt ? 'In' : 'Check in'}
+                    </button>
                   </td>
                   <td className="pr-2 text-right"><ChevronRight size={14} className="inline text-white/30" /></td>
                 </tr>
@@ -187,8 +196,8 @@ function TeamDetail({ reg, event, onSave, onMarkPaid }: { reg: Registration; eve
                     ) : (
                       <>
                         <td className="py-2 pl-1 font-semibold text-white">{c.first} {c.last}{i === 0 && <span className="ml-1 text-[9px] text-amber-300">CAPT</span>}</td>
-                        <td className="py-2"><a href={`tel:${c.phone}`} className="font-mono text-white/70 hover:underline">{c.phone}</a></td>
-                        <td className="py-2 pr-1"><a href={`mailto:${c.email}`} className="text-white/60 hover:underline">{c.email}</a></td>
+                        <td className="py-2"><a href={`tel:${encodeURIComponent(c.phone)}`} className="font-mono text-white/70 hover:underline">{c.phone}</a></td>
+                        <td className="py-2 pr-1"><a href={`mailto:${encodeURIComponent(c.email)}`} className="text-white/60 hover:underline">{c.email}</a></td>
                       </>
                     )}
                   </tr>

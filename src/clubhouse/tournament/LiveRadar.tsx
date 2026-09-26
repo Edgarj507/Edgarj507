@@ -1,7 +1,7 @@
 import { lazy, Suspense, useMemo, useState } from 'react';
 import { FastForward, Radar, Truck } from 'lucide-react';
 import { imageryProvider } from '../../map/providers';
-import type { Order } from '../../ops/model';
+import { isOpenOrder, type Order } from '../../ops/model';
 import type { placeGroups } from '../../ops/pace';
 import type { RadarDot } from './RadarMap';
 import { Queue } from '../Queue';
@@ -22,7 +22,7 @@ interface Props {
   liveSince: number;
   selected: string | null;
   onSelect: (id: string) => void;
-  onStatus: (id: string, s: Order['status']) => void;
+  onStatus: (id: string, s: Order['status'], label: string) => void;
   /** Demo: positions are simulated; lets staff fast-forward the event clock. */
   onFastForward?: () => void;
 }
@@ -32,7 +32,7 @@ export function LiveRadar({ holes, placed, alertMin, orders, now, liveSince, sel
   const [mapFailed, setMapFailed] = useState(!PROVIDER);
   const onCourse = placed.filter((g) => g.at);
   const late = onCourse.filter((g) => g.behindMin > alertMin);
-  const active = orders.filter((o) => o.status !== 'completed');
+  const active = orders.filter(isOpenOrder);
 
   const dots: RadarDot[] = useMemo(() => [
     ...onCourse.map((g) => ({
@@ -87,7 +87,7 @@ export function LiveRadar({ holes, placed, alertMin, orders, now, liveSince, sel
         <Panel label="Fulfillment queue panel" title={<><Truck size={13} /> Fulfillment Queue</>} scroll="thin"
           aside={<span className="font-mono text-[10px] text-white/50">{active.length} open</span>}
           className="shrink-0 transition-[height] duration-500 ease-out"
-          style={{ height: `clamp(25vh, calc(64px + ${active.length} * 118px), 50vh)` }}>
+          style={{ height: `clamp(25vh, calc(104px + ${active.length} * 118px), 50vh)` }}>
           <Queue orders={orders} now={now} selected={selected} onSelect={onSelect} onStatus={onStatus} />
         </Panel>
         <Panel label="Pace board panel" title={<>Pace board</>} scroll="thin" className="min-h-[160px] flex-1" aside={<span className="text-[10px] text-white/45">{onCourse.length} groups · slowest first</span>}>

@@ -70,8 +70,8 @@ describe('orders', () => {
   it('players see only their own orders and cannot mark them completed; staff see the queue', async () => {
     const mine = await as(db, 'authenticated', Q, () => db.query(`select * from public.orders`));
     expect(mine.rows.length).toBeGreaterThan(0);
-    const upd = await as(db, 'authenticated', P, () => db.query(`update public.orders set status = 'completed'`));
-    expect(upd.affectedRows).toBe(0);
+    // P's recent new orders are visible for the 2-minute cancel window, but only 'cancelled' is allowed.
+    await expect(as(db, 'authenticated', P, () => db.query(`update public.orders set status = 'completed'`))).rejects.toThrow(/row-level security/);
     const q = await as(db, 'authenticated', S, () => db.query(`update public.orders set status = 'enroute' where player_id = $1`, [P]));
     expect(q.affectedRows).toBeGreaterThan(0);
   });

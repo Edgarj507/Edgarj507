@@ -21,7 +21,7 @@ describe('Mark Completed + End of Day tally', () => {
   it('staff complete orders; the server stamps completion; players cannot', async () => {
     const o = (await order([{ sku: 'BEER_DRAFT', qty: 2 }, { sku: 'TEES', qty: 1 }])).rows[0] as { id: string; status: string; completed_at: string | null };
     expect(o).toMatchObject({ status: 'new', completed_at: null });
-    expect((await q(P, `update public.orders set status = 'completed' where id = $1`, [o.id])).affectedRows).toBe(0);
+    await expect(q(P, `update public.orders set status = 'completed' where id = $1`, [o.id])).rejects.toThrow(/row-level security/); // players may only cancel
     await expect(q(S, `update public.orders set status = 'delivered' where id = $1`, [o.id])).rejects.toThrow(/check constraint/);
     await q(S, `update public.orders set status = 'completed' where id = $1`, [o.id]);
     const row = await db.query<{ completed_at: string | null }>(`select completed_at from public.orders where id = $1`, [o.id]);

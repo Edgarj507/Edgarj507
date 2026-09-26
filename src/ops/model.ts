@@ -48,7 +48,8 @@ export interface Order {
   lng: number;
   items: OrderItem[];
   total: number;
-  status: 'new' | 'enroute' | 'completed';
+  /** 'cancelled' = the player undid it within the grace window; never fulfilled or tallied. */
+  status: 'new' | 'enroute' | 'completed' | 'cancelled';
   /** When staff marked it completed (drives the End of Day tally). */
   completedAt?: number;
 }
@@ -67,6 +68,8 @@ export interface Registration {
   paid: number;
   paidAt: number;
   teeTime: string;
+  /** Event-day check-in at the registration table (staff). */
+  checkedInAt?: number;
 }
 
 export interface TeeBooking {
@@ -95,7 +98,7 @@ export interface TeeBlock { id: string; reason: BlockReason; note?: string; star
 /** A player's last on-property GPS fix during a live event. Never stored off-property. */
 export interface LivePosition { player: string; phone: string; lat: number; lng: number; at: number }
 
-export interface OpsState { v: 1; settings: OpsSettings; orders: Order[]; registrations: Registration[]; teeSheet: TeeBooking[]; teeBlocks: TeeBlock[]; positions: LivePosition[]; eventDetails: Record<string, EventDetails> }
+export interface OpsState { v: 1; settings: OpsSettings; orders: Order[]; registrations: Registration[]; teeSheet: TeeBooking[]; teeBlocks: TeeBlock[]; positions: LivePosition[]; eventDetails: Record<string, EventDetails>; tickets: SupportTicket[] }
 
 /** Somerby property line (hole hull); positions outside it + 250 ft are refused. */
 export const COURSE_BOUNDARY = courseBoundary(SOMERBY_DATA.holes);
@@ -109,7 +112,7 @@ export const DEFAULT_SETTINGS: OpsSettings = {
   tournamentLive: false, liveSince: null, inHouse: false,
 };
 
-export const initialOps = (): OpsState => ({ v: 1, settings: { ...DEFAULT_SETTINGS }, orders: [], registrations: [], teeSheet: [], teeBlocks: [], positions: [], eventDetails: {} });
+export const initialOps = (): OpsState => ({ v: 1, settings: { ...DEFAULT_SETTINGS }, orders: [], registrations: [], teeSheet: [], teeBlocks: [], positions: [], eventDetails: {}, tickets: [] });
 
 export type OpsAction =
   | { type: 'order'; order: Order }
@@ -124,12 +127,20 @@ export type OpsAction =
   | { type: 'block'; block: TeeBlock } // staff only
   | { type: 'unblock'; id: string } // staff only
   | { type: 'eventDetails'; eventId: string; patch: EventDetails | { banner: null } } // staff only
+  | { type: 'editBlock'; block: TeeBlock } // staff only
+  /** Correct a recorded payment (e.g. undo a mistaken "cash received"). */
+  | { type: 'setPaid'; id: string; paid: number } // staff only
+  | { type: 'checkIn'; id: string; at: number | null } // staff only
+  /** Player undoes their own order while it is still new and within the grace window. */
+  | { type: 'cancel'; id: string; player: string; at: number }
+  | { type: 'ticket'; ticket: SupportTicket }
+  | { type: 'ticketStatus'; id: string; status: TicketStatus; note?: string } // staff only
   /** Live telemetry: accepted only during a live event and only on the property (+250 ft). */
   | { type: 'ping'; pos: LivePosition }
   /** Kill switch: sever a player's broadcast (left the property, event over, app closed). */
   | { type: 'unping'; phone: string };
 
-const STAFF_ONLY = new Set<OpsAction['type']>(['setting', 'status', 'book', 'unbook', 'block', 'unblock', 'eventDetails']);
+const STAFF_ONLY = new Set<OpsAction['type']>(['setting', 'status', 'book', 'unbook', 'block', 'unblock', 'eventDetails', 'editBlock', 'setPaid', 'ticketStatus', 'checkIn']);
 
 // ── Hours ──────────────────────────────────────────────────────────────────────────────────────
 export const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -168,6 +179,9 @@ export function opsReducer(s: OpsState, a: OpsAction, role: Role): OpsState {
       const charityOnly = o.kind === 'order' && o.items.length > 0 && o.items.every((i) => i.kind === 'charity');
       if (o.kind === 'hail' ? !s.settings.hailCart : !charityOnly && !s.settings.liveOrdering) return s;
       if (needsKitchen(o) && !isOpenAt(s.settings.kitchenHours, o.createdAt)) return s; // no ghost orders
+      // Anti-spam: a player may have at most 5 open orders and 1 open cart hail.
+      const open = s.orders.filter((x) => x.player === o.player && (x.status === 'new' || x.status === 'enroute'));
+      if (o.kind === 'hail' ? open.some((x) => x.kind === 'hail') : open.filter((x) => x.kind === 'order').length >= MAX_OPEN_ORDERS) return s;
       const mulls = charityQty(o);
       if (mulls && mulligansBought(s.orders, o.player, o.createdAt) + mulls > s.settings.mulliganLimit) return s;
       // Charity mulligans are digital: nothing to deliver, so they're completed on purchase.
@@ -220,6 +234,29 @@ export function opsReducer(s: OpsState, a: OpsAction, role: Role): OpsState {
     }
     case 'unblock':
       return { ...s, teeBlocks: s.teeBlocks.filter((k) => k.id !== a.id) };
+    case 'editBlock': {
+      const k = a.block;
+      if (!s.teeBlocks.some((x) => x.id === k.id) || !validateBlock(k).ok) return s;
+      return { ...s, teeBlocks: s.teeBlocks.map((x) => (x.id === k.id ? { ...k, note: k.note ? sanitizeText(k.note, 80) || undefined : undefined } : x)) };
+    }
+    case 'checkIn':
+      return { ...s, registrations: s.registrations.map((r) => (r.id === a.id ? { ...r, checkedInAt: a.at ?? undefined } : r)) };
+    case 'setPaid':
+      if (!(a.paid >= 0)) return s;
+      return { ...s, registrations: s.registrations.map((r) => (r.id === a.id ? { ...r, paid: Math.min(r.total, a.paid) } : r)) };
+    case 'cancel': {
+      const o = s.orders.find((x) => x.id === a.id);
+      if (!o || o.player !== a.player || o.status !== 'new' || a.at - o.createdAt > CANCEL_WINDOW_MS) return s;
+      return { ...s, orders: s.orders.map((x) => (x.id === a.id ? { ...x, status: 'cancelled' } : x)) };
+    }
+    case 'ticket': {
+      const t = cleanTicket(a.ticket);
+      if (!t || s.tickets.some((x) => x.id === t.id)) return s;
+      return { ...s, tickets: [t, ...s.tickets].slice(0, MAX_TICKETS) };
+    }
+    case 'ticketStatus':
+      if (!TICKET_STATUSES.includes(a.status)) return s;
+      return { ...s, tickets: s.tickets.map((t) => (t.id === a.id ? { ...t, status: a.status, note: a.note !== undefined ? sanitizeText(a.note, 500) : t.note, updatedAt: Date.now() } : t)) };
     case 'eventDetails': {
       const cur = s.eventDetails[a.eventId] ?? {};
       const next: EventDetails = { ...cur };
@@ -261,6 +298,93 @@ const MULLIGAN_WINDOW_MS = 18 * 3600_000;
 export const mulligansBought = (orders: Order[], player: string, now: number) =>
   orders.filter((o) => o.player === player && o.createdAt > now - MULLIGAN_WINDOW_MS).reduce((a, o) => a + charityQty(o), 0);
 
+export const CANCEL_WINDOW_MS = 2 * 60_000;
+/** Waiting for staff: new or en route (not completed, not cancelled). */
+export const isOpenOrder = (o: Pick<Order, 'status'>) => o.status === 'new' || o.status === 'enroute';
+export const MAX_OPEN_ORDERS = 5;
+
+// ── Support tickets ───────────────────────────────────────────────────────────────────────────
+export const TICKET_CATEGORIES = ['GPS Tracking', 'Scorecard', 'F&B Ordering', 'App Crash', 'Other'] as const;
+export type TicketCategory = (typeof TICKET_CATEGORIES)[number];
+export const TICKET_STATUSES = ['open', 'investigating', 'resolved'] as const;
+export type TicketStatus = (typeof TICKET_STATUSES)[number];
+export interface Diagnostics { [k: string]: string | number | boolean | string[] }
+export interface SupportTicket {
+  id: string; createdAt: number; updatedAt?: number;
+  category: TicketCategory; description: string; reporter: string; contact?: string;
+  source: 'player' | 'staff'; status: TicketStatus; note?: string;
+  /** Re-encoded JPEG (EXIF/GPS stripped), ≤ 600 KB. */
+  screenshot?: string;
+  diagnostics: Diagnostics;
+}
+const MAX_TICKETS = 100;
+export const SCREENSHOT_MAX_CHARS = 800_000; // ≈ 600 KB of JPEG as base64
+const DIAG_MAX_CHARS = 12_000;
+
+/** Validate + normalize a ticket before it is stored (all fields untrusted). */
+export function cleanTicket(t: SupportTicket): SupportTicket | null {
+  if (!(TICKET_CATEGORIES as readonly string[]).includes(t.category)) return null;
+  const description = t.description.replace(/[<>]/g, '').split(/\r?\n/).map((l) => sanitizeText(l, 500)).join('\n').trim().slice(0, 2000);
+  if (description.length < 10) return null;
+  if (t.screenshot && !(/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(t.screenshot) && t.screenshot.length <= SCREENSHOT_MAX_CHARS)) return null;
+  const diag = JSON.stringify(t.diagnostics ?? {});
+  if (diag.length > DIAG_MAX_CHARS) return null;
+  const contact = t.contact ? (EMAIL_RE.test(t.contact.trim()) ? t.contact.trim().toLowerCase() : normalizePhone(t.contact) ?? undefined) : undefined;
+  return {
+    id: t.id, createdAt: t.createdAt, category: t.category, description, reporter: sanitizeText(t.reporter, 60) || 'Anonymous',
+    ...(contact ? { contact } : {}), source: t.source === 'staff' ? 'staff' : 'player', status: 'open',
+    ...(t.screenshot ? { screenshot: t.screenshot } : {}), diagnostics: JSON.parse(diag),
+  };
+}
+
+// ── Undo (staff corrections) ──────────────────────────────────────────────────────────────────
+/**
+ * The action that reverses `a` given the state *before* it ran, or null when it can't be undone
+ * safely (e.g. starting/ending a tournament, which starts/stops location sharing).
+ */
+export function inverseOf(s: OpsState, a: OpsAction): OpsAction | null {
+  switch (a.type) {
+    case 'status': {
+      const o = s.orders.find((x) => x.id === a.id);
+      return o && o.status !== a.status && o.status !== 'cancelled' ? { type: 'status', id: a.id, status: o.status } : null;
+    }
+    case 'book': return { type: 'unbook', id: a.booking.id };
+    case 'unbook': { const b = s.teeSheet.find((x) => x.id === a.id); return b ? { type: 'book', booking: b } : null; }
+    case 'block': return { type: 'unblock', id: a.block.id };
+    case 'unblock': { const k = s.teeBlocks.find((x) => x.id === a.id); return k ? { type: 'block', block: k } : null; }
+    case 'editBlock': { const k = s.teeBlocks.find((x) => x.id === a.block.id); return k ? { type: 'editBlock', block: k } : null; }
+    case 'roster': {
+      const r = s.registrations.find((x) => x.id === a.id);
+      return r ? { type: 'roster', id: r.id, teamName: r.teamName, captain: r.captain, roster: r.roster } : null;
+    }
+    case 'checkIn': {
+      const r = s.registrations.find((x) => x.id === a.id);
+      return r ? { type: 'checkIn', id: r.id, at: r.checkedInAt ?? null } : null;
+    }
+    case 'pay': case 'setPaid': {
+      const r = s.registrations.find((x) => x.id === a.id);
+      return r ? { type: 'setPaid', id: r.id, paid: r.paid } : null;
+    }
+    case 'setting': {
+      if ('tournamentLive' in a.patch) return null;
+      const prev = Object.fromEntries(Object.keys(a.patch).map((k) => [k, s.settings[k as keyof OpsSettings]]));
+      return { type: 'setting', patch: prev as Partial<OpsSettings> };
+    }
+    case 'eventDetails': {
+      const d = s.eventDetails[a.eventId] ?? {};
+      return { type: 'eventDetails', eventId: a.eventId, patch: { text: d.text ?? '', banner: d.banner ?? null } };
+    }
+    case 'ticketStatus': { const t = s.tickets.find((x) => x.id === a.id); return t ? { type: 'ticketStatus', id: t.id, status: t.status, note: t.note ?? '' } : null; }
+    default: return null;
+  }
+}
+
+/** Neutralize spreadsheet formulas in exported cells (CSV injection). */
+export const csvCell = (v: string) => {
+  const c = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+  return /[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c;
+};
+
 // ── Event branding ────────────────────────────────────────────────────────────────────────────
 /** Organizer text: plain text, line breaks kept, markup stripped, 800 chars max. */
 export const cleanOrganizerText = (t: string) =>
@@ -298,7 +422,7 @@ export function eodTally(orders: Order[], date: string) {
       shop: items.filter((l) => l.kind === 'shop').reduce((a, l) => a + l.revenue, 0),
       charity: items.filter((l) => l.kind === 'charity').reduce((a, l) => a + l.revenue, 0),
     },
-    openOrders: orders.filter((o) => o.status !== 'completed').length,
+    openOrders: orders.filter(isOpenOrder).length,
   };
 }
 

@@ -1,14 +1,16 @@
 import { useState } from 'react';
-import { BookOpen, ChevronLeft, ChevronRight, FileText, Flag, Globe, LifeBuoy, Ruler, Shield, Users } from 'lucide-react';
+import { BookOpen, Bug, Vibrate, ChevronLeft, ChevronRight, FileText, Flag, Globe, LifeBuoy, Ruler, Shield, Users } from 'lucide-react';
 import { LEGAL, type LegalDocId } from '../legal/documents';
 import { LegalModal } from '../legal/LegalUI';
 import { acceptedAt } from '../legal/consent';
+import { haptic, hapticsEnabled, setHapticsEnabled } from '../lib/haptics';
 import { usePrefs, type Units } from '../i18n/prefs';
 import { LANGUAGES, type Lang } from '../i18n/strings';
 
-export function SettingsView({ onBack, onProfile, onCourses, onHelp, onTutorial }: { onBack: () => void; onProfile: () => void; onCourses: () => void; onHelp: () => void; onTutorial: () => void }) {
+export function SettingsView({ onBack, onProfile, onCourses, onHelp, onTutorial, onReport }: { onBack: () => void; onProfile: () => void; onCourses: () => void; onHelp: () => void; onTutorial: () => void; onReport: () => void }) {
   const { t, lang, units, communityPins, langDetected, set } = usePrefs();
   const [doc, setDoc] = useState<LegalDocId | null>(null);
+  const [haptics, setHaptics] = useState(hapticsEnabled);
   const row = 'flex items-center justify-between rounded-xl border border-white/10 bg-black/40 p-4 backdrop-blur-md transition-all hover:bg-white/5 active:scale-[0.98]';
   const seg = (active: boolean) =>
     `flex-1 rounded-lg py-2 text-[10px] font-bold uppercase tracking-widest transition-all ${active ? 'bg-emerald-500/20 text-emerald-400' : 'text-white/50'}`;
@@ -92,10 +94,29 @@ export function SettingsView({ onBack, onProfile, onCourses, onHelp, onTutorial 
           </button>
         </section>
 
+        <section className="flex items-center justify-between rounded-xl border border-white/10 bg-black/40 p-4 backdrop-blur-md">
+          <div className="flex items-start gap-2">
+            <Vibrate size={14} className="mt-0.5 text-emerald-400" />
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-wide text-white">Haptic feedback</div>
+              <div className="mt-0.5 text-[9px] text-white/50">Taps, toggles and order confirmations (supported phones)</div>
+            </div>
+          </div>
+          <button role="switch" aria-checked={haptics} aria-label="Haptic feedback"
+            onClick={() => { const v = !haptics; setHapticsEnabled(v); setHaptics(v); if (v) haptic('success'); }}
+            className={`relative h-5 w-10 shrink-0 rounded-full transition-colors ${haptics ? 'bg-emerald-500' : 'border border-white/10 bg-white/10'}`}>
+            <span className={`absolute left-[2px] top-[2px] h-4 w-4 rounded-full bg-white transition-transform ${haptics ? 'translate-x-5' : ''}`} />
+          </button>
+        </section>
+
         <section className="flex flex-col gap-2" aria-label="Help">
           <span className="pl-1 text-[10px] font-bold uppercase tracking-widest text-white/50">Help</span>
           <button onClick={onHelp} className={row}>
             <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-white"><LifeBuoy size={14} className="text-emerald-400" /> Help Center & FAQ</span>
+            <ChevronRight size={16} className="text-white/30" />
+          </button>
+          <button onClick={onReport} className={row}>
+            <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-white"><Bug size={14} className="text-emerald-400" /> Support & Bug Report</span>
             <ChevronRight size={16} className="text-white/30" />
           </button>
           <button onClick={onTutorial} className={row}>

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, CalendarDays, Download, Printer, Receipt } from 'lucide-react';
-import { eodTally, localDate, type Order } from '../../ops/model';
+import { csvCell, eodTally, localDate, type Order } from '../../ops/model';
 import { Panel, Stat } from '../ui';
 
 const money = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -15,7 +15,7 @@ export function EodReport({ orders, now, courseName }: { orders: Order[]; now: n
   const exportCsv = () => {
     const rows = [['Item', 'SKU', 'Category', 'Qty', 'Revenue'], ...t.items.map((l) => [l.name, l.sku, KIND[l.kind], String(l.qty), l.revenue.toFixed(2)]),
       [], ['Orders fulfilled', '', '', String(t.orders), ''], ['Cart hails', '', '', String(t.hails), ''], ['Total revenue', '', '', '', t.revenue.toFixed(2)]];
-    const csv = rows.map((r) => r.map((c) => (/[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(',')).join('\n');
+    const csv = rows.map((r) => r.map(csvCell).join(',')).join('\n'); // formula-injection safe
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     const a = Object.assign(document.createElement('a'), { href: url, download: `eod-${date}.csv` });
     a.click();

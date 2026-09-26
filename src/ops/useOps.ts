@@ -35,6 +35,7 @@ function read(): OpsState {
         ],
         positions: Array.isArray(raw.positions) ? raw.positions : [],
         eventDetails: raw.eventDetails && typeof raw.eventDetails === 'object' ? raw.eventDetails : {},
+        tickets: Array.isArray(raw.tickets) ? raw.tickets : [],
         // 'delivered' was renamed 'completed' (End of Day tally counts completed orders).
         orders: raw.orders.map((o: Omit<Order, 'status'> & { status: string }) => (o.status === 'delivered' ? { ...o, status: 'completed', completedAt: o.completedAt ?? o.createdAt } : o)),
       };

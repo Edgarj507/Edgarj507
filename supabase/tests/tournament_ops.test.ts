@@ -68,6 +68,7 @@ describe('geofenced live positions', () => {
     await ping(CAP, ON);
     await ping(MATE, ON); // on the roster by phone
     await expect(ping(OUT, ON)).rejects.toThrow(/row-level security/); // not registered
+    await db.query(`update public.live_positions set updated_at = now() - interval '1 hour'`); // past the rate limit
     await expect(ping(CAP, HOME)).rejects.toThrow(/row-level security/); // off property
     const staff = await q(S, `select player_id from public.live_positions`);
     expect(staff.rows).toHaveLength(2);

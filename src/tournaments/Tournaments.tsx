@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { haptic } from '../lib/haptics';
 import { CalendarDays, Check, ChevronLeft, CreditCard, HeartHandshake, Lock, MailCheck, MessageSquareText, Pencil, ScanFace, Trophy, UserMinus, Users } from 'lucide-react';
 import { EVENTS, type EventInfo } from './events';
 import { balance, blankContact, cleanContact, filledCount, isOpenSlot, validateTeam, type Contact, type Registration } from '../ops/model';
@@ -49,13 +50,13 @@ export function Tournaments({ captain, onBack }: { captain: Contact; onBack: () 
   const pay = async (method: 'applepay' | 'card') => {
     if (!event) return;
     // Ticket checkout requires the Liability Waiver (tournament participation, cart safety) and Terms.
-    if (!agreed) return setAgreeErr(true);
+    if (!agreed) { haptic('error'); return setAgreeErr(true); }
     accept(['waiver', 'tos'], 'checkout', event.id);
     setPayErr(null);
     setPaying(true);
     const ok = await charge(method);
     setPaying(false);
-    if (!ok) return setPayErr('Payment not confirmed.');
+    if (!ok) { haptic('error'); return setPayErr('Payment not confirmed.'); }
     dispatch({
       type: 'register',
       reg: {
@@ -64,6 +65,7 @@ export function Tournaments({ captain, onBack }: { captain: Contact; onBack: () 
         teeTime: `Shotgun · Hole ${(ops.registrations.filter((r) => r.eventId === event.id).length % 18) + 1}`,
       },
     });
+    haptic('success');
     setStep('done');
   };
 
@@ -206,6 +208,8 @@ function MyTeam({ reg, live, onSave, onPay }: { reg: Registration; live: boolean
   const [roster, setRoster] = useState<Contact[]>(reg.roster);
   const [touched, setTouched] = useState(false);
   const [invite, setInvite] = useState<string[]>([]);
+  // Error correction: the roster as it was before the last save, so the captain can undo it.
+  const [prev, setPrev] = useState<{ teamName: string; captain: Contact; roster: Registration['roster'] } | null>(null);
   const [paying, setPaying] = useState(false);
   const v = validateTeam(team, roster, cap);
   const due = balance(reg);
@@ -216,9 +220,18 @@ function MyTeam({ reg, live, onSave, onPay }: { reg: Registration; live: boolean
     // Anyone new in a slot gets offered an invite text.
     const before = new Set(reg.roster.map((c) => normalizePhone(c.phone)).filter(Boolean));
     setInvite(roster.filter((c) => !isOpenSlot(c) && !before.has(normalizePhone(c.phone))).map((c) => c.phone));
+    setPrev({ teamName: reg.teamName, captain: reg.captain, roster: reg.roster });
     onSave({ teamName: team, captain: cap, roster: roster as Registration['roster'] });
+    haptic('success');
     setEditing(false);
     setTouched(false);
+  };
+  const undoSave = () => {
+    if (!prev) return;
+    onSave(prev);
+    haptic('warning');
+    setTeam(prev.teamName); setCap(prev.captain); setRoster(prev.roster);
+    setPrev(null); setInvite([]);
   };
 
   return (
@@ -257,6 +270,12 @@ function MyTeam({ reg, live, onSave, onPay }: { reg: Registration; live: boolean
               </li>
             ))}
           </ul>
+          {prev && !live && (
+            <div role="status" className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-[11px] text-amber-100">
+              Roster updated.
+              <button onClick={undoSave} className="rounded-lg bg-amber-300 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-black">Undo changes</button>
+            </div>
+          )}
           {invite.length > 0 && (
             <a href={smsGroupLink(invite, inviteText(reg.teamName, ev))} className="mt-3 flex items-center justify-center gap-2 rounded-xl border border-emerald-400/40 bg-emerald-500/15 py-2.5 text-[10px] font-black uppercase tracking-widest text-emerald-200">
               <MessageSquareText size={14} /> Text new player{invite.length > 1 ? 's' : ''} the invite

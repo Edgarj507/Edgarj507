@@ -1,4 +1,4 @@
-import { eodTally, validBanner, cleanOrganizerText, localDate, balance, blankContact, blockFor, blockLabel, dayBlock, filledCount, groupStatus, initialOps, isOpenAt, opsReducer, validateBlock, validateTeam, STANDARD_MIN_PER_HOLE, type Order, type Registration, type TeeBlock, type TeeBooking } from './model';
+import { cleanTicket, csvCell, inverseOf, CANCEL_WINDOW_MS, eodTally, validBanner, cleanOrganizerText, localDate, balance, blankContact, blockFor, blockLabel, dayBlock, filledCount, groupStatus, initialOps, isOpenAt, opsReducer, validateBlock, validateTeam, STANDARD_MIN_PER_HOLE, type Order, type Registration, type TeeBlock, type TeeBooking } from './model';
 
 const order = (over: Partial<Order> = {}): Order => ({ id: 'o1', kind: 'order', createdAt: 1, player: 'Edgar', hole: 4, lat: 44, lng: -92, items: [], total: 9, status: 'new', ...over });
 
@@ -213,5 +213,77 @@ describe('event branding', () => {
     const s = opsReducer(initialOps(), { type: 'eventDetails', eventId: 'e', patch: { text: 'hi', banner: { name: 'f.png', type: 'image/png', dataUrl: png } } }, 'staff');
     expect(s.eventDetails.e).toMatchObject({ text: 'hi', banner: { name: 'f.png' } });
     expect(opsReducer(s, { type: 'eventDetails', eventId: 'e', patch: { banner: null } }, 'staff').eventDetails.e.banner).toBeUndefined();
+  });
+});
+
+describe('undo & corrections', () => {
+  const t0 = new Date(2026, 9, 17, 12).getTime();
+  const it_ = { sku: 'TEES', name: 'Tees', price: 5, qty: 1, kind: 'shop' as const };
+  const base = opsReducer(initialOps(), { type: 'order', order: order({ id: 'o', player: 'Edgar', createdAt: t0, items: [it_], total: 5 }) }, 'player');
+  it('reverting a mistaken completion restores the order and the EOD tally', () => {
+    const done = opsReducer(base, { type: 'status', id: 'o', status: 'completed' }, 'staff');
+    expect(eodTally(done.orders, localDate(done.orders[0].completedAt!)).revenue).toBe(5);
+    const inv = inverseOf(base, { type: 'status', id: 'o', status: 'completed' })!;
+    const back = opsReducer(done, inv, 'staff');
+    expect(back.orders[0]).toMatchObject({ status: 'new', completedAt: undefined });
+    expect(eodTally(back.orders, localDate(Date.now())).revenue).toBe(0);
+  });
+  it('inverts blocks, bookings, settings, payments and check-ins; not tournament start', () => {
+    const k: TeeBlock = { id: 'k', reason: 'Maintenance', startDate: '2026-10-17', endDate: '2026-10-17', from: '09:00', to: '10:00' };
+    const s1 = opsReducer(initialOps(), { type: 'block', block: k }, 'staff');
+    expect(opsReducer(s1, inverseOf(initialOps(), { type: 'block', block: k })!, 'staff').teeBlocks).toHaveLength(0);
+    const edit = { ...k, reason: 'Private Event' as const };
+    const s2 = opsReducer(s1, { type: 'editBlock', block: edit }, 'staff');
+    expect(s2.teeBlocks[0].reason).toBe('Private Event');
+    expect(opsReducer(s2, inverseOf(s1, { type: 'editBlock', block: edit })!, 'staff').teeBlocks[0].reason).toBe('Maintenance');
+    expect(inverseOf(initialOps(), { type: 'setting', patch: { hailCart: false } })).toEqual({ type: 'setting', patch: { hailCart: true } });
+    expect(inverseOf(initialOps(), { type: 'setting', patch: { tournamentLive: true } })).toBeNull();
+    const reg: Registration = { id: 'r', eventId: 'e', teamName: 'T', captain: { first: 'A', last: 'B', phone: '+15075550100', email: 'a@b.co' }, roster: [blankContact(), blankContact(), blankContact()], total: 600, paid: 150, paidAt: 0, teeTime: '' };
+    const s3 = opsReducer(initialOps(), { type: 'register', reg }, 'player');
+    const paid = opsReducer(s3, { type: 'pay', id: 'r', amount: 450 }, 'staff');
+    expect(opsReducer(paid, inverseOf(s3, { type: 'pay', id: 'r', amount: 450 })!, 'staff').registrations[0].paid).toBe(150);
+    const inn = opsReducer(s3, { type: 'checkIn', id: 'r', at: 5 }, 'staff');
+    expect(inn.registrations[0].checkedInAt).toBe(5);
+    expect(opsReducer(inn, { type: 'checkIn', id: 'r', at: 5 }, 'player')).toBe(inn);
+    expect(opsReducer(inn, inverseOf(s3, { type: 'checkIn', id: 'r', at: 5 })!, 'staff').registrations[0].checkedInAt).toBeUndefined();
+  });
+  it('players undo their own new order within 2 minutes only', () => {
+    expect(opsReducer(base, { type: 'cancel', id: 'o', player: 'Mallory', at: t0 + 1000 }, 'player')).toBe(base);
+    expect(opsReducer(base, { type: 'cancel', id: 'o', player: 'Edgar', at: t0 + CANCEL_WINDOW_MS + 1 }, 'player')).toBe(base);
+    const c = opsReducer(base, { type: 'cancel', id: 'o', player: 'Edgar', at: t0 + 1000 }, 'player');
+    expect(c.orders[0].status).toBe('cancelled');
+    expect(eodTally(c.orders, localDate(t0)).orders).toBe(0);
+  });
+  it('anti-spam: 5 open orders, 1 open hail per player', () => {
+    let s = initialOps();
+    for (let i = 0; i < 6; i++) s = opsReducer(s, { type: 'order', order: order({ id: `x${i}`, createdAt: t0, items: [it_] }) }, 'player');
+    expect(s.orders).toHaveLength(5);
+    s = opsReducer(s, { type: 'order', order: order({ id: 'h1', kind: 'hail', createdAt: t0 }) }, 'player');
+    s = opsReducer(s, { type: 'order', order: order({ id: 'h2', kind: 'hail', createdAt: t0 }) }, 'player');
+    expect(s.orders.filter((o) => o.kind === 'hail')).toHaveLength(1);
+  });
+});
+
+describe('support tickets', () => {
+  const t = { id: 't', createdAt: 1, category: 'GPS Tracking' as const, description: 'Distances froze\n<b>after</b> a call', reporter: 'Edgar', source: 'player' as const, status: 'resolved' as const, diagnostics: { appVersion: '1.0.0' } };
+  it('normalizes untrusted tickets (status forced open, markup stripped)', () => {
+    expect(cleanTicket(t)).toMatchObject({ status: 'open', description: 'Distances froze\nbafter/b a call' });
+    expect(cleanTicket({ ...t, description: 'short' })).toBeNull();
+    expect(cleanTicket({ ...t, category: 'Hack' as never })).toBeNull();
+    expect(cleanTicket({ ...t, screenshot: 'data:image/svg+xml;base64,PHN2Zz4=' })).toBeNull();
+    expect(cleanTicket({ ...t, diagnostics: { x: 'a'.repeat(20_000) } })).toBeNull();
+  });
+  it('only staff change ticket status', () => {
+    const s = opsReducer(initialOps(), { type: 'ticket', ticket: t }, 'player');
+    expect(opsReducer(s, { type: 'ticketStatus', id: 't', status: 'resolved' }, 'player')).toBe(s);
+    expect(opsReducer(s, { type: 'ticketStatus', id: 't', status: 'investigating', note: 'repro' }, 'staff').tickets[0]).toMatchObject({ status: 'investigating', note: 'repro' });
+  });
+});
+
+describe('CSV injection', () => {
+  it('neutralizes formulas and quotes', () => {
+    expect(csvCell('=HYPERLINK("http://x")')).toBe(`"'=HYPERLINK(""http://x"")"`);
+    expect(csvCell('+1')).toBe("'+1");
+    expect(csvCell('Draft Beer')).toBe('Draft Beer');
   });
 });
