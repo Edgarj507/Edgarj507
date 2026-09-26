@@ -115,7 +115,11 @@ export interface LivePosition { player: string; phone: string; lat: number; lng:
 
 export interface OpsState { v: 1; settings: OpsSettings; orders: Order[]; registrations: Registration[]; teeSheet: TeeBooking[]; teeBlocks: TeeBlock[]; positions: LivePosition[]; eventDetails: Record<string, EventDetails>; tickets: SupportTicket[];
   menu: StoreItem[]; carts: BevCart[]; messages: ChatMessage[]; broadcasts: Broadcast[]; sos: SosAlert[];
-  events: TournamentEvent[]; verifications: CourseVerification[] }
+  events: TournamentEvent[]; verifications: CourseVerification[];
+  /** In-app "shared with you" event invites between friends (by handle). */
+  shares: EventShare[] }
+
+export interface EventShare { id: string; eventId: string; fromName: string; toHandle: string; at: number; seen?: boolean }
 
 /** Somerby property line (hole hull); positions outside it + 250 ft are refused. */
 export const COURSE_BOUNDARY = courseBoundary(SOMERBY_DATA.holes);
@@ -134,7 +138,7 @@ export const SEED_EVENTS: TournamentEvent[] = EVENTS.map((e) => ({ ...e, venueId
 export const initialOps = (): OpsState => ({
   v: 1, settings: { ...DEFAULT_SETTINGS }, orders: [], registrations: [], teeSheet: [], teeBlocks: [], positions: [], eventDetails: {}, tickets: [],
   menu: DEFAULT_MENU.map((m) => ({ ...m })), carts: DEFAULT_CARTS.map((c) => ({ ...c })), messages: [], broadcasts: [], sos: [],
-  events: SEED_EVENTS.map((e) => ({ ...e })), verifications: [],
+  events: SEED_EVENTS.map((e) => ({ ...e })), verifications: [], shares: [],
 });
 
 /** Charity mulligans are sold only during a live in-house tournament. */
@@ -175,6 +179,8 @@ export type OpsAction =
   | { type: 'eventRemove'; id: string } // staff / organizer
   | { type: 'activeEvent'; id: string } // staff / organizer
   | { type: 'verifyRequest'; request: CourseVerification }
+  | { type: 'shareEvent'; share: EventShare }
+  | { type: 'shareSeen'; toHandle: string }
   | { type: 'verifyDecision'; id: string; status: 'approved' | 'rejected'; reason?: string } // admin
   /** Live telemetry: accepted only during a live event and only on the property (+250 ft). */
   | { type: 'ping'; pos: LivePosition }
@@ -384,6 +390,17 @@ export function opsReducer(s: OpsState, a: OpsAction, role: Role): OpsState {
       const clean: CourseVerification = { ...v, applicant: sanitizeText(v.applicant, 60), title: sanitizeText(v.title, 60), email: v.email.trim().toLowerCase(),
         phone: normalizePhone(v.phone) ?? v.phone, note: v.note ? cleanText(v.note, 400) : undefined, status: 'pending', decidedAt: undefined, reason: undefined };
       return { ...s, verifications: [clean, ...s.verifications].slice(0, 100) };
+    }
+    case 'shareEvent': {
+      const sh = a.share;
+      const to = sanitizeText(sh.toHandle, 30).replace(/^@/, '').toLowerCase();
+      if (!to || !/^[a-z0-9_.]{2,30}$/.test(to) || !s.events.some((e) => e.id === sh.eventId)) return s;
+      if (s.shares.some((x) => x.eventId === sh.eventId && x.toHandle === to && !x.seen)) return s; // no spam
+      return { ...s, shares: [{ id: sh.id, eventId: sh.eventId, toHandle: to, fromName: sanitizeText(sh.fromName, 60) || 'A friend', at: sh.at }, ...s.shares].slice(0, 500) };
+    }
+    case 'shareSeen': {
+      const to = a.toHandle.replace(/^@/, '').toLowerCase();
+      return { ...s, shares: s.shares.map((x) => (x.toHandle === to ? { ...x, seen: true } : x)) };
     }
     case 'verifyDecision':
       return { ...s, verifications: s.verifications.map((v) => (v.id === a.id && v.status === 'pending' ? { ...v, status: a.status, decidedAt: Date.now(), reason: a.reason ? cleanText(a.reason, 200) : undefined } : v)) };

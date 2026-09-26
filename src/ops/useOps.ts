@@ -37,7 +37,7 @@ function read(): OpsState {
         eventDetails: raw.eventDetails && typeof raw.eventDetails === 'object' ? raw.eventDetails : {},
         tickets: Array.isArray(raw.tickets) ? raw.tickets : [],
         // Newer collections: fall back to the defaults for older saves.
-        ...Object.fromEntries((['menu', 'carts', 'messages', 'broadcasts', 'sos', 'events', 'verifications'] as const)
+        ...Object.fromEntries((['menu', 'carts', 'messages', 'broadcasts', 'sos', 'events', 'verifications', 'shares'] as const)
           .map((k) => [k, Array.isArray(raw[k]) ? raw[k] : initialOps()[k]])),
         // 'delivered' was renamed 'completed' (End of Day tally counts completed orders).
         orders: raw.orders.map((o: Omit<Order, 'status'> & { status: string }) => (o.status === 'delivered' ? { ...o, status: 'completed', completedAt: o.completedAt ?? o.createdAt } : o)),

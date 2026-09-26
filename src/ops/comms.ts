@@ -49,3 +49,11 @@ export function validMessage(m: ChatMessage) {
 export function validBroadcast(b: Broadcast) {
   return !!cleanText(b.title, 120) && !!cleanText(b.body, 600) && ['on-course', 'event', 'all'].includes(b.audience) && b.kind in BROADCAST_TEMPLATES;
 }
+
+/** Which broadcasts a golfer should see: everyone; on-course alerts while playing; event alerts for their events. */
+export function relevantBroadcasts(bs: Broadcast[], ctx: { onCourse: boolean; eventIds: string[]; now: number; maxAgeMs?: number }) {
+  const max = ctx.maxAgeMs ?? 12 * 3600_000;
+  return bs.filter((b) => ctx.now - b.at < max && (
+    b.audience === 'all' || (b.audience === 'on-course' && ctx.onCourse) || (b.audience === 'event' && (b.eventId ? ctx.eventIds.includes(b.eventId) : ctx.eventIds.length > 0))
+  ));
+}

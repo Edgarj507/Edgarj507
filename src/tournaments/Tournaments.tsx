@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { haptic } from '../lib/haptics';
-import { CalendarDays, Check, ChevronLeft, CreditCard, HeartHandshake, Lock, MailCheck, MessageSquareText, Pencil, ScanFace, Trophy, UserMinus, Users } from 'lucide-react';
+import { CalendarDays, Check, ChevronLeft, CreditCard, HeartHandshake, Lock, MailCheck, MessageSquareText, Pencil, ScanFace, Share2, Star, Trophy, UserMinus, Users } from 'lucide-react';
 import { EVENTS, type EventInfo } from './events';
+import { readFavs, ShareEvent, writeFavs, type Friend } from './ShareEvent';
 import { balance, blankContact, cleanContact, filledCount, isOpenSlot, validateTeam, type Contact, type Registration } from '../ops/model';
 import { useOps, newId } from '../ops/useOps';
 import { normalizePhone, smsGroupLink } from '../lib/sms';
@@ -24,11 +25,27 @@ async function charge(method: 'applepay' | 'card') {
   return true;
 }
 
-export function Tournaments({ captain, onBack }: { captain: Contact; onBack: () => void }) {
+export function Tournaments({ captain, onBack, handle = '', friends = [], initialEventId }: {
+  captain: Contact; onBack: () => void;
+  /** Signed-in golfer's handle (receives in-app shares). */
+  handle?: string;
+  friends?: Friend[];
+  /** Deep link (?event=…) opens straight to that event. */
+  initialEventId?: string | null;
+}) {
   const [ops, dispatch] = useOps('player');
-  const [tab, setTab] = useState<'events' | 'mine'>('events');
-  const [event, setEvent] = useState<EventInfo | null>(null);
-  const [step, setStep] = useState<'list' | 'details' | 'roster' | 'pay' | 'done'>('list');
+  const events: EventInfo[] = ops.events.filter((e) => e.status === 'scheduled');
+  const deep = initialEventId ? events.find((e) => e.id === initialEventId) ?? null : null;
+  const [tab, setTab] = useState<'events' | 'saved' | 'mine'>('events');
+  const [event, setEvent] = useState<EventInfo | null>(deep);
+  const [step, setStep] = useState<'list' | 'details' | 'roster' | 'pay' | 'done'>(deep ? 'details' : 'list');
+  const [favs, setFavs] = useState<string[]>(readFavs);
+  const [sharing, setSharing] = useState<EventInfo | null>(null);
+  const me = handle.replace(/^@/, '').toLowerCase();
+  const inbox = me ? ops.shares.filter((x) => x.toHandle === me) : [];
+  const unseenShares = inbox.filter((x) => !x.seen).length;
+  useEffect(() => { if (tab === 'events' && unseenShares) { const id = setTimeout(() => dispatch({ type: 'shareSeen', toHandle: me }), 4000); return () => clearTimeout(id); } }, [tab, unseenShares, me, dispatch]);
+  const toggleFav = (id: string) => setFavs((f) => { const next = f.includes(id) ? f.filter((x) => x !== id) : [id, ...f]; writeFavs(next); haptic('tap'); return next; });
   const [agreed, setAgreed] = useState(false);
   const [agreeErr, setAgreeErr] = useState(false);
   const [team, setTeam] = useState('');
@@ -84,34 +101,57 @@ export function Tournaments({ captain, onBack }: { captain: Contact; onBack: () 
 
       {step === 'list' && (
         <div role="tablist" className="z-10 mb-4 flex rounded-xl border border-white/10 bg-black/40 p-1 backdrop-blur-md">
-          {([['events', 'Events'], ['mine', `My Tournaments${mine.length ? ` · ${mine.length}` : ''}`]] as const).map(([id, label]) => (
+          {([['events', 'Events'], ['saved', `Saved${favs.length ? ` · ${favs.length}` : ''}`], ['mine', `My Teams${mine.length ? ` · ${mine.length}` : ''}`]] as const).map(([id, label]) => (
             <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className={`flex-1 rounded-lg py-2 text-[10px] font-bold uppercase tracking-wide ${tab === id ? 'border border-emerald-500/30 bg-emerald-500/20 text-emerald-400' : 'border border-transparent text-white/50'}`}>{label}</button>
           ))}
         </div>
       )}
 
       <div className="no-scrollbar z-10 flex-1 overflow-y-auto pb-28">
-        {step === 'list' && tab === 'events' && EVENTS.map((e) => (
-          <button key={e.id} onClick={() => { setEvent(e); setStep('details'); setTouched(false); }} className="mb-3 w-full rounded-3xl border border-white/10 bg-white/[0.06] p-4 text-left backdrop-blur-2xl active:scale-[0.99]">
-            <BannerThumb banner={ops.eventDetails[e.id]?.banner} interactive={false} />
-            <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-amber-300"><Trophy size={12} /> Charity event</div>
-            <div className="text-lg font-black tracking-tight text-white">{e.name}</div>
-            <div className="mt-1 flex items-center gap-1.5 text-[11px] text-white/60"><CalendarDays size={12} /> {e.date}</div>
-            <div className="text-[11px] text-white/60">{e.course} · {e.format}</div>
-            <div className="mt-1 flex items-center gap-1.5 text-[11px] text-emerald-300/80"><HeartHandshake size={12} /> {e.cause}</div>
-            <div className="mt-3 flex items-center justify-between">
-              <span className="font-mono text-xl font-semibold text-emerald-400">${e.foursomePrice}<span className="text-[10px] text-white/40"> / foursome</span></span>
-              <span className="rounded-full bg-emerald-500 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-black">View & register</span>
+        {step === 'list' && tab === 'events' && inbox.length > 0 && (
+          <div className="mb-3 rounded-2xl border border-sky-300/30 bg-sky-400/10 p-3" aria-label="Shared with you">
+            <div className="mb-1 text-[10px] font-bold uppercase tracking-widest text-sky-200">Shared with you{unseenShares ? ` · ${unseenShares} new` : ''}</div>
+            {inbox.slice(0, 5).map((x) => {
+              const e = events.find((ev) => ev.id === x.eventId);
+              return e ? <button key={x.id} onClick={() => { setEvent(e); setStep('details'); }} className="block w-full truncate py-0.5 text-left text-[12px] text-white/85"><b>{x.fromName}</b> shared {e.name}</button> : null;
+            })}
+          </div>
+        )}
+        {step === 'list' && (tab === 'events' || tab === 'saved') && (tab === 'saved' ? events.filter((e) => favs.includes(e.id)) : events).map((e) => (
+          <div key={e.id} className="relative mb-3">
+            <button onClick={() => { setEvent(e); setStep('details'); setTouched(false); }} className="w-full rounded-3xl border border-white/10 bg-white/[0.06] p-4 text-left backdrop-blur-2xl active:scale-[0.99]">
+              <BannerThumb banner={ops.eventDetails[e.id]?.banner} interactive={false} />
+              <div className="mb-2 flex items-center gap-2 pr-20 text-[10px] font-bold uppercase tracking-widest text-amber-300"><Trophy size={12} /> Charity event</div>
+              <div className="text-lg font-black tracking-tight text-white">{e.name}</div>
+              <div className="mt-1 flex items-center gap-1.5 text-[11px] text-white/60"><CalendarDays size={12} /> {e.date}</div>
+              <div className="text-[11px] text-white/60">{e.course} · {e.format}</div>
+              <div className="mt-1 flex items-center gap-1.5 text-[11px] text-emerald-300/80"><HeartHandshake size={12} /> {e.cause}</div>
+              <div className="mt-3 flex items-center justify-between">
+                <span className="font-mono text-xl font-semibold text-emerald-400">${e.foursomePrice}<span className="text-[10px] text-white/40"> / foursome</span></span>
+                <span className="rounded-full bg-emerald-500 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-black">View & register</span>
+              </div>
+            </button>
+            <div className="absolute right-3 top-3 flex gap-1.5">
+              <button onClick={() => toggleFav(e.id)} aria-pressed={favs.includes(e.id)} aria-label={`${favs.includes(e.id) ? 'Unsave' : 'Save'} ${e.name}`} className={`grid h-9 w-9 place-items-center rounded-full border backdrop-blur ${favs.includes(e.id) ? 'border-amber-300/60 bg-amber-300/20 text-amber-200' : 'border-white/15 bg-black/50 text-white/70'}`}><Star size={15} fill={favs.includes(e.id) ? 'currentColor' : 'none'} /></button>
+              <button onClick={() => setSharing(e)} aria-label={`Share ${e.name}`} className="grid h-9 w-9 place-items-center rounded-full border border-white/15 bg-black/50 text-white/70 backdrop-blur"><Share2 size={15} /></button>
             </div>
-          </button>
+          </div>
         ))}
+        {step === 'list' && tab === 'saved' && !favs.some((id) => events.some((e) => e.id === id)) && <p className="py-10 text-center text-[12px] text-white/45">Tap ☆ on an event to save it here.</p>}
+        {step === 'list' && tab === 'events' && !events.length && <p className="py-10 text-center text-[12px] text-white/45">No upcoming events.</p>}
 
         {step === 'details' && event && (
-          <EventDetailsView event={event} details={ops.eventDetails[event.id]} onRegister={() => setStep('roster')} />
+          <>
+            <div className="mb-2 flex justify-end gap-1.5">
+              <button onClick={() => toggleFav(event.id)} aria-pressed={favs.includes(event.id)} className={`flex h-9 items-center gap-1.5 rounded-full border px-3 text-[10px] font-bold uppercase tracking-widest ${favs.includes(event.id) ? 'border-amber-300/60 bg-amber-300/15 text-amber-200' : 'border-white/15 bg-black/40 text-white/70'}`}><Star size={13} fill={favs.includes(event.id) ? 'currentColor' : 'none'} /> {favs.includes(event.id) ? 'Saved' : 'Save'}</button>
+              <button onClick={() => setSharing(event)} className="flex h-9 items-center gap-1.5 rounded-full border border-white/15 bg-black/40 px-3 text-[10px] font-bold uppercase tracking-widest text-white/70"><Share2 size={13} /> Share</button>
+            </div>
+            <EventDetailsView event={event} details={ops.eventDetails[event.id]} onRegister={() => setStep('roster')} />
+          </>
         )}
 
         {step === 'list' && tab === 'mine' && (
-          mine.length ? mine.map((r) => <MyTeam key={r.id} reg={r} live={ops.settings.tournamentLive} onSave={(p) => dispatch({ type: 'roster', id: r.id, ...p, actor: r.captain.phone })} onPay={(amt) => dispatch({ type: 'pay', id: r.id, amount: amt })} />)
+          mine.length ? mine.map((r) => <MyTeam key={r.id} reg={r} events={events.length ? events : EVENTS} live={ops.settings.tournamentLive} onSave={(p) => dispatch({ type: 'roster', id: r.id, ...p, actor: r.captain.phone })} onPay={(amt) => dispatch({ type: 'pay', id: r.id, amount: amt })} />)
             : <p className="py-10 text-center text-[12px] text-white/45">You haven’t captained a team yet.</p>
         )}
 
@@ -181,6 +221,10 @@ export function Tournaments({ captain, onBack }: { captain: Contact; onBack: () 
         )}
       </div>
 
+      {sharing && (
+        <ShareEvent event={sharing} friends={friends} onClose={() => setSharing(null)}
+          onInApp={(handles) => handles.forEach((h) => dispatch({ type: 'shareEvent', share: { id: newId(), eventId: sharing.id, fromName: `${captain.first} ${captain.last}`.trim(), toHandle: h, at: Date.now() } }))} />
+      )}
       {step === 'roster' && (
         <div className="absolute inset-x-5 bottom-6 z-20">
           <div className="rounded-2xl border border-white/10 bg-black/60 p-1.5 backdrop-blur-xl">
@@ -200,8 +244,8 @@ export function Tournaments({ captain, onBack }: { captain: Contact; onBack: () 
 }
 
 /** Captain's view of one team: head count, payment, and pre-event roster edits (drop-outs, swaps). */
-function MyTeam({ reg, live, onSave, onPay }: { reg: Registration; live: boolean; onSave: (p: { teamName: string; captain: Contact; roster: Registration['roster'] }) => void; onPay: (amount: number) => void }) {
-  const ev = EVENTS.find((e) => e.id === reg.eventId) ?? EVENTS[0];
+function MyTeam({ reg, events, live, onSave, onPay }: { reg: Registration; events: EventInfo[]; live: boolean; onSave: (p: { teamName: string; captain: Contact; roster: Registration['roster'] }) => void; onPay: (amount: number) => void }) {
+  const ev = events.find((e) => e.id === reg.eventId) ?? EVENTS.find((e) => e.id === reg.eventId) ?? events[0] ?? EVENTS[0];
   const [editing, setEditing] = useState(false);
   const [team, setTeam] = useState(reg.teamName);
   const [cap, setCap] = useState(reg.captain);

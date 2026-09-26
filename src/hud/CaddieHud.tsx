@@ -1,6 +1,6 @@
 import { lazy, Suspense, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { haptic } from '../lib/haptics';
-import { ArrowDown, ArrowUp, Aperture, Car, CircleHelp, Check, ChevronLeft, BadgeCheck, ChevronRight, Cloud, CloudOff, Flag, HandCoins, HeartHandshake, ShoppingBag, Users, RotateCcw, ShieldHalf, Volume2, VolumeX } from 'lucide-react';
+import { ArrowDown, ArrowUp, Aperture, Car, CircleHelp, Check, ChevronLeft, BadgeCheck, ChevronRight, Cloud, CloudOff, Flag, HandCoins, HeartHandshake, MessageSquareText, ShoppingBag, Siren, Users, RotateCcw, ShieldHalf, Volume2, VolumeX } from 'lucide-react';
 import { MapPlaceholder } from './MapPlaceholder';
 import { imageryProvider } from '../map/providers';
 import { aimPosition, ballPosition, holeGeometry, shotBearing } from '../map/geometry';
@@ -19,15 +19,16 @@ import { ShotModal } from './ShotModal';
 import { MulliganSheet } from './MulliganSheet';
 import { StoreSheet } from './StoreSheet';
 import { useOps, newId } from '../ops/useOps';
-import { CANCEL_WINDOW_MS, isOpenOrder, mulligansBought, type OrderItem } from '../ops/model';
-import { MULLIGAN } from '../ops/menu';
+import { CANCEL_WINDOW_MS, charityOpen, isOpenOrder, mulligansBought, type OrderItem } from '../ops/model';
+import { MULLIGAN_SKU } from '../ops/store';
 import type { TelemetryStatus } from '../ops/useTelemetry';
 import { caddiePhrase, speak, speechAvailable } from '../lib/voiceCaddie';
 import type { ClubStats } from '../lib/hooks';
 import type { SyncStatus } from '../lib/sync';
 
-// Mock weather feed (replace with weather API).
-const WEATHER = { tempF: 72, windMph: 12, windFromDeg: 225, rainPct: 20, uv: 6 };
+// Fallback when the live weather feed is unavailable (offline / first load).
+const FALLBACK_WEATHER = { tempF: 72, windMph: 12, windFromDeg: 225, rainPct: 20, uv: 6 };
+export type HudWeather = typeof FALLBACK_WEATHER;
 
 export interface Buddy { id: string; name: string; liveScore: string }
 
@@ -66,6 +67,13 @@ interface Props {
   /** Tournament location sharing state (geofenced). */
   telemetry?: TelemetryStatus;
   onHelp?: () => void;
+  /** Live conditions (Open-Meteo via useWeatherGuard); falls back to typical values. */
+  weather?: HudWeather | null;
+  unreadMessages?: number;
+  onMessages?: () => void;
+  /** Opens the SOS sheet with the ball's hole and GPS position. */
+  onSos?: (where: { hole: number; lat: number; lng: number }) => void;
+  sosActive?: boolean;
 }
 
 const M_TO_YD = 1.09361;
@@ -81,7 +89,9 @@ const scoreColor = (s: string) => (s.startsWith('-') ? 'text-red-400' : s === 'E
 export function CaddieHud({
   hole, tee, strokes, roundScore, format, isLastHole, bag, onLog, onUndo, onNext, onScorecard, onExit, buddies = [], tournamentMode = false, sync = 'off', remoteRoundId, courseName, courseAttribution,
   holeLines, clubStats = {}, ledger, onMulligan, onUnmulligan, playerName = 'Guest', onBuyMulligans, telemetry = 'off', onHelp,
+  weather, unreadMessages = 0, onMessages, onSos, sosActive = false,
 }: Props) {
+  const WEATHER = weather ?? FALLBACK_WEATHER;
   const [justLogged, setJustLogged] = useState(false);
   const [puttView, setPuttView] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -169,17 +179,17 @@ export function CaddieHud({
   };
 
   // On-course commerce: every order/hail is tagged with the hole and the ball's GPS position.
-  const placeOrder = (items: OrderItem[], kind: 'order' | 'hail' = 'order') => {
+  const placeOrder = (items: OrderItem[], kind: 'order' | 'hail' = 'order', note?: string) => {
     const id = newId();
-    opsDispatch({ type: 'order', order: { id, kind, createdAt: Date.now(), player: playerName, hole: hole.number, lat: ball.lat, lng: ball.lng, items, total: items.reduce((a, i) => a + i.price * i.qty, 0), status: 'new' } });
+    opsDispatch({ type: 'order', order: { id, kind, createdAt: Date.now(), player: playerName, hole: hole.number, lat: ball.lat, lng: ball.lng, items, total: items.reduce((a, i) => a + i.price * i.qty, 0), status: 'new', note } });
     return id;
   };
   // Fault tolerance: a player can undo an order/hail while it's still new, within 2 minutes.
   const cancelOrder = (id: string) => opsDispatch({ type: 'cancel', id, player: playerName, at: Date.now() });
-  const onStorePlace = (items: OrderItem[]) => {
-    const id = placeOrder(items);
-    const mulls = items.filter((i) => i.sku === MULLIGAN.sku).reduce((a, i) => a + i.qty, 0);
-    if (mulls) onBuyMulligans?.(mulls, MULLIGAN.price);
+  const onStorePlace = (items: OrderItem[], note?: string) => {
+    const id = placeOrder(items, 'order', note);
+    const mull = items.find((i) => i.sku === MULLIGAN_SKU);
+    if (mull) onBuyMulligans?.(mull.qty, mull.price);
     return id;
   };
   const hail = () => {
@@ -338,6 +348,13 @@ export function CaddieHud({
                 <CircleHelp size={14} />
               </button>
             )}
+            {onMessages && (
+              <button onClick={onMessages} aria-label={`Messages${unreadMessages ? ` · ${unreadMessages} unread` : ''}`} title="Messages"
+                className={`${glass} relative grid h-8 w-8 place-items-center rounded-full text-white/70`}>
+                <MessageSquareText size={14} />
+                {unreadMessages > 0 && <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-emerald-400 px-1 text-[9px] font-black text-black">{unreadMessages}</span>}
+              </button>
+            )}
             <button onClick={() => set({ guardian: !guardian })} aria-pressed={guardian} aria-label={t('hud.guardian')} title={t('hud.guardian')}
               className={`${glass} grid h-8 w-8 place-items-center rounded-full ${guardian ? 'text-amber-300 ring-1 ring-amber-300/60' : 'text-white/60'}`}>
               <ShieldHalf size={14} />
@@ -348,6 +365,12 @@ export function CaddieHud({
               <span className={`h-1.5 w-1.5 rounded-full ${telemetry === 'sharing' ? 'animate-pulse bg-emerald-400' : 'bg-white/40'}`} />
               {telemetry === 'sharing' ? 'Live · on property' : telemetry === 'off-property' ? 'Not sharing · off property' : telemetry === 'denied' ? 'Location blocked' : 'Locating…'}
             </span>
+          )}
+          {onSos && (
+            <button onClick={() => onSos({ hole: hole.number, lat: ball.lat, lng: ball.lng })} aria-label="SOS emergency"
+              className={`flex h-8 items-center gap-1 rounded-full border px-2.5 text-[10px] font-black uppercase tracking-widest backdrop-blur-xl ${sosActive ? 'animate-pulse border-red-300 bg-red-600 text-white' : 'border-red-500/60 bg-black/50 text-red-300'}`}>
+              <Siren size={12} /> SOS
+            </button>
           )}
           {ledger && (
             <button onClick={() => setMullOpen(true)} className={`${glass} flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold text-amber-200`}>
@@ -373,7 +396,8 @@ export function CaddieHud({
             <div className="pointer-events-auto flex flex-col gap-1.5" aria-label="Course services">
               <FloatBtn label="Clubhouse Store" onClick={() => setStore('store')} disabled={!ops.settings.liveOrdering}><ShoppingBag size={15} /></FloatBtn>
               <FloatBtn label={hailed ? 'Cart hailed' : 'Hail Cart'} onClick={hail} disabled={!ops.settings.hailCart} active={hailed}><Car size={15} /></FloatBtn>
-              <FloatBtn label="Charity Store" onClick={() => setStore('charity')} tone="amber"><HeartHandshake size={15} /></FloatBtn>
+              {/* Charity mulligans: in-house tournaments only, while the event is live. */}
+              {charityOpen(ops.settings) && <FloatBtn label="Charity Store" onClick={() => setStore('charity')} tone="amber"><HeartHandshake size={15} /></FloatBtn>}
             </div>
           </div>
           <div className="flex items-end justify-between gap-2 short:hidden">
@@ -462,7 +486,7 @@ export function CaddieHud({
         <MulliganSheet ledger={ledger} players={players} onUse={onMulligan} onUndo={onUnmulligan} onClose={() => setMullOpen(false)} />
       )}
       {store && (
-        <StoreSheet mode={store} settings={ops.settings} hole={hole.number} mulligansBought={myMulls} onPlace={onStorePlace} onCancel={cancelOrder} onClose={() => setStore(null)} />
+        <StoreSheet mode={store} settings={ops.settings} menu={ops.menu} hole={hole.number} mulligansBought={myMulls} onPlace={onStorePlace} onCancel={cancelOrder} onClose={() => setStore(null)} />
       )}
       {puttView && (
         <PuttView lie={{ ...lie, pin: pinYds }} holeNumber={hole.number} onClose={() => setPuttView(false)} onConfirmCup={pins.report} />

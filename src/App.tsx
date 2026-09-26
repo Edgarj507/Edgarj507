@@ -34,6 +34,9 @@ import { setDiagnosticView } from './support/diagnostics';
 import { useOps } from './ops/useOps';
 import { useTelemetry } from './ops/useTelemetry';
 import { normalizePhone } from './lib/sms';
+import { useWeather, useWeatherGuard } from './weather/useWeather';
+import { usePlayerComms } from './player/usePlayerComms';
+import { BroadcastBanner, InboxSheet, LightningBanner, SosSheet } from './player/PlayerComms';
 
 const FORMAT_HELP: Record<Format, string> = {
   'Stroke Play': 'Every stroke counts. Total vs par.',
@@ -133,22 +136,22 @@ export default function App() {
   const WeatherWidgets = () => (
     <div className="flex flex-col gap-1.5 shrink-0 items-end pointer-events-auto z-20">
       <div className="flex items-center bg-black/40 backdrop-blur-md border border-white/10 rounded-full px-2.5 py-1.5 shadow-sm">
-        <span className="text-white font-bold text-[10px] tracking-tight mr-2">72°</span>
+        <span className="text-white font-bold text-[10px] tracking-tight mr-2">{menuWeather.conditions?.tempF ?? 72}°</span>
         <div className="w-px h-3 bg-white/20 mr-2"></div>
         <div className="flex items-center gap-1 text-white/90 font-medium">
           <Wind size={10} className="text-sky-300" />
-          <span className="text-[10px]">12mph</span>
+          <span className="text-[10px]">{menuWeather.conditions?.windMph ?? 12}mph</span>
         </div>
       </div>
       <div className="flex items-center bg-black/40 backdrop-blur-md border border-white/10 rounded-full px-2.5 py-1.5 shadow-sm">
         <div className="flex items-center gap-1 text-white/90 font-medium">
           <span className="text-[10px] leading-none text-blue-300">☔</span>
-          <span className="text-[10px]">20%</span>
+          <span className="text-[10px]">{menuWeather.conditions?.rainPct ?? 20}%</span>
         </div>
         <div className="w-px h-3 bg-white/20 mx-2"></div>
         <div className="flex items-center gap-1 text-white/90 font-medium">
           <Sun size={10} className="text-amber-400" />
-          <span className="text-[10px]">UV 6</span>
+          <span className="text-[10px]">UV {menuWeather.conditions?.uv ?? 6}</span>
         </div>
       </div>
     </div>
@@ -166,6 +169,10 @@ export default function App() {
         </div>
         <div className="flex items-start gap-2">
           {WeatherWidgets()}
+          <button onClick={() => setInbox('chat')} aria-label={`Messages${comms.unreadChat + comms.unseen.length ? ` · ${comms.unreadChat + comms.unseen.length} new` : ''}`} className="pointer-events-auto relative grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-black/40 text-white/80 backdrop-blur-md active:scale-95">
+            <MessageCircle size={15} />
+            {comms.unreadChat + comms.unseen.length > 0 && <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-emerald-400 px-1 text-[9px] font-black text-black">{comms.unreadChat + comms.unseen.length}</span>}
+          </button>
           <button onClick={() => setHelp(true)} aria-label="Help" className="pointer-events-auto grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-black/40 text-white/80 backdrop-blur-md active:scale-95">
             <CircleHelp size={15} />
           </button>
@@ -629,6 +636,28 @@ export default function App() {
   const range = holeRange(round.config.length);
   const rangeIdx = Array.from({ length: range.end - range.start + 1 }, (_, k) => range.start + k);
   const partner = hudBuddies[0];
+
+  const gatedNow = auth.status === 'loading' || auth.status === 'signedOut';
+  // Golfer comms: clubhouse chat, broadcast alerts and SOS (see player/usePlayerComms).
+  const myEventIds = ops.registrations.filter(r => myPhone && [r.captain, ...r.roster].some(c => normalizePhone(c.phone) === myPhone)).map(r => r.eventId);
+  const comms = usePlayerComms(ops, opsDispatch, {
+    name: auth.profile.display_name, phone: myPhone,
+    onCourse: currentView === 'hud' || telemetry.status === 'sharing', eventIds: myEventIds,
+  });
+  const [inbox, setInbox] = useState<null | 'chat' | 'alerts'>(null);
+  // Shared event links: https://…/?event=<id> opens that event's page.
+  const [deepEvent, setDeepEvent] = useState<string | null>(() => { try { return new URLSearchParams(window.location.search).get('event'); } catch { return null; } });
+  useEffect(() => {
+    if (!deepEvent || gatedNow) return;
+    setCurrentView('tournaments');
+    try { window.history.replaceState(null, '', window.location.pathname); } catch { /* ignore */ }
+  }, [deepEvent, gatedNow]);
+  const [sosWhere, setSosWhere] = useState<null | { hole?: number; lat?: number; lng?: number }>(null);
+  // Personal weather guard during a round — device GPS, falling back to the course location, so
+  // it also protects golfers at courses that don't run the Clubhouse OS.
+  const [courseLat, courseLng] = activeCourse.data.center;
+  const guard = useWeatherGuard(role === 'player' && currentView === 'hud', { lat: courseLat, lng: courseLng });
+  const menuWeather = useWeather(role === 'player' && currentView === 'menu' ? SOMERBY.data.center[0] : null, SOMERBY.data.center[1]);
   const scoreRound = (excludeCurrent: boolean) => summarize({
     format: round.config.format,
     pars: rangeIdx.map(i => PARS[i]),
@@ -709,6 +738,11 @@ export default function App() {
             onHelp={() => setHelp(true)}
             playerName={auth.profile.display_name}
             onBuyMulligans={(qty, price) => dispatch({ type: 'buyMulligans', player: 'me', qty, price })}
+            weather={guard.conditions}
+            unreadMessages={comms.unreadChat + comms.unseen.length}
+            onMessages={() => setInbox(comms.unseen.length && !comms.unreadChat ? 'alerts' : 'chat')}
+            onSos={where => setSosWhere(where)}
+            sosActive={!!comms.mySos}
           />
         ) : (
           <>
@@ -721,7 +755,10 @@ export default function App() {
               {currentView === 'tournaments' && (
                 <Tournaments
                   captain={{ first: captainName[0], last: captainName.slice(1).join(' '), phone: auth.phone ?? '', email: auth.user?.email ?? '' }}
-                  onBack={() => setCurrentView('menu')}
+                  onBack={() => { setDeepEvent(null); setCurrentView('menu'); }}
+                  handle={auth.status === 'signedIn' ? auth.profile.handle : ''}
+                  friends={MOCK_DATA.friends.network.map(f => ({ id: f.id, name: f.name, handle: f.handle }))}
+                  initialEventId={deepEvent}
                 />
               )}
               {currentView === 'course' && ViewCourse()}
@@ -777,6 +814,10 @@ export default function App() {
             </div>
           </>
         )}
+        {!gated && guard.alarm && <LightningBanner reasons={guard.lightning.reasons} onDismiss={guard.dismiss} />}
+        {!gated && !guard.alarm && !inbox && <BroadcastBanner comms={comms} onOpen={() => setInbox('alerts')} />}
+        {!gated && inbox && <InboxSheet comms={comms} tab={inbox} onClose={() => setInbox(null)} />}
+        {!gated && sosWhere && <SosSheet comms={comms} where={sosWhere ?? {}} onClose={() => setSosWhere(null)} />}
         {staffGate && <StaffPortal onClose={() => setStaffGate(false)} />}
         {!gated && tutorial && <Onboarding onDone={() => setTutorial(false)} />}
         {help && <HelpCenter audience="player" onClose={() => setHelp(false)} onTutorial={() => { setHelp(false); setTutorial(true); }} onReport={() => { setHelp(false); setReport(true); }} />}

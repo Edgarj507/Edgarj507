@@ -1,17 +1,20 @@
 import { useState } from 'react';
 import { haptic } from '../lib/haptics';
 import { ChefHat, HandCoins, HeartHandshake, Lock, Minus, Plus, ScanFace, ShoppingBag, X } from 'lucide-react';
-import { MENU, MULLIGAN, cartTotal } from '../ops/menu';
-import { fmtTime, isOpenAt, type OpsSettings, type OrderItem } from '../ops/model';
+import { cartTotal } from '../ops/menu';
+import { charityOpen, fmtTime, isOpenAt, type OpsSettings, type OrderItem } from '../ops/model';
+import { CATEGORY_LABEL, kindOf, MULLIGAN_SKU, type StoreCategory, type StoreItem } from '../ops/store';
 import { isEnrolled, verify } from '../lib/webauthn';
 
 interface Props {
   mode: 'store' | 'charity';
   settings: OpsSettings;
+  /** Live catalog managed in the Clubhouse OS (price, stock, visibility). */
+  menu: StoreItem[];
   hole: number;
   /** Charity mulligans this player already bought in this event window. */
   mulligansBought: number;
-  onPlace: (items: OrderItem[]) => string;
+  onPlace: (items: OrderItem[], note?: string) => string;
   onCancel: (id: string) => void;
   onClose: () => void;
 }
@@ -20,7 +23,10 @@ interface Props {
  * Clubhouse Store (F&B + Pro Shop) and the Charity/Event Store. Purchases are confirmed with
  * Face ID on enrolled devices; the organizer's mulligan limit caps the charity quantity.
  */
-export function StoreSheet({ mode, settings, hole, mulligansBought, onPlace, onCancel, onClose }: Props) {
+const ORDER: StoreCategory[] = ['food', 'beverage', 'proshop', 'apparel'];
+
+export function StoreSheet({ mode, settings, menu, hole, mulligansBought, onPlace, onCancel, onClose }: Props) {
+  const [note, setNote] = useState('');
   const [qty, setQty] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -29,12 +35,19 @@ export function StoreSheet({ mode, settings, hole, mulligansBought, onPlace, onC
   const [undone, setUndone] = useState(false);
 
   const charity = mode === 'charity';
-  const catalog = charity ? [MULLIGAN] : MENU;
+  // Charity items exist only during a live in-house tournament; hidden items never show.
+  const catalog = (charity
+    ? (charityOpen(settings) ? menu.filter((m) => m.visible && m.category === 'charity') : [])
+    : menu.filter((m) => m.visible && m.category !== 'charity').sort((a, b) => ORDER.indexOf(a.category) - ORDER.indexOf(b.category)))
+    .map((m) => ({ ...m, kind: kindOf(m.category), section: CATEGORY_LABEL[m.category] }));
   const mullRoom = Math.max(0, settings.mulliganLimit - mulligansBought);
   // Restaurant hours come from the Clubhouse OS; F&B locks when the kitchen is closed (no ghost orders).
   const kitchenOpen = isOpenAt(settings.kitchenHours, Date.now());
   const locked = (kind: string) => kind === 'fnb' && !kitchenOpen;
-  const max = (sku: string) => (sku === MULLIGAN.sku ? mullRoom : 10);
+  const max = (sku: string) => {
+    const m = catalog.find((x) => x.sku === sku);
+    return Math.min(sku === MULLIGAN_SKU ? mullRoom : 10, m?.stock ?? 10);
+  };
   const items: OrderItem[] = catalog.filter((m) => qty[m.sku]).map((m) => ({ sku: m.sku, name: m.name, price: m.price, qty: qty[m.sku], kind: m.kind }));
   const total = cartTotal(items);
   const closed = !charity && !settings.liveOrdering;
@@ -49,7 +62,7 @@ export function StoreSheet({ mode, settings, hole, mulligansBought, onPlace, onC
     const ok = !face || (await verify('player'));
     setBusy(false);
     if (!ok) { haptic('error'); return setErr('Face ID didn’t confirm the purchase.'); }
-    setOrderId(onPlace(items));
+    setOrderId(onPlace(items, charity ? undefined : note.trim() || undefined));
     setPlaced(true);
     haptic('success');
   };
@@ -84,6 +97,8 @@ export function StoreSheet({ mode, settings, hole, mulligansBought, onPlace, onC
             {undone && <p role="status" className="text-[11px] text-amber-200">Order cancelled — nothing will be delivered.</p>}
             <button onClick={onClose} className="mt-3 h-10 w-full rounded-2xl bg-white/10 text-[11px] font-bold uppercase tracking-widest text-white">Back to round</button>
           </div>
+        ) : charity && !charityOpen(settings) ? (
+          <p className="rounded-2xl border border-amber-400/20 bg-amber-400/10 p-4 text-center text-[12px] text-amber-200">Charity mulligans are sold only during a live in-house tournament.</p>
         ) : closed ? (
           <p className="rounded-2xl border border-amber-400/20 bg-amber-400/10 p-4 text-center text-[12px] text-amber-200">Ordering is paused by the clubhouse right now.</p>
         ) : (
@@ -108,21 +123,25 @@ export function StoreSheet({ mode, settings, hole, mulligansBought, onPlace, onC
                       </div>
                     )
                   ) : (
-                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
+                  <div className={`flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 ${m.stock === 0 ? 'opacity-50' : ''}`}>
                     <span className="flex flex-col">
                       <span className="text-[12px] font-semibold text-white/90">{m.name}</span>
-                      <span className="font-mono text-[10px] text-white/45">${m.price}</span>
+                      <span className="font-mono text-[10px] text-white/45">${m.price}{m.stock === 0 ? ' · Sold out' : m.stock !== null && m.stock <= 5 ? ` · only ${m.stock} left` : ''}</span>
                     </span>
                     <span className="flex items-center gap-2">
                       <button onClick={() => bump(m.sku, -1)} aria-label={`Remove ${m.name}`} disabled={!qty[m.sku]} className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white/70 disabled:opacity-30"><Minus size={12} /></button>
                       <span className="w-4 text-center font-mono text-sm text-white">{qty[m.sku] ?? 0}</span>
-                      <button onClick={() => bump(m.sku, 1)} aria-label={`Add ${m.name}`} disabled={(qty[m.sku] ?? 0) >= max(m.sku)} className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white/70 disabled:opacity-30"><Plus size={12} /></button>
+                      <button onClick={() => bump(m.sku, 1)} aria-label={`Add ${m.name}`} disabled={m.stock === 0 || (qty[m.sku] ?? 0) >= max(m.sku)} className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white/70 disabled:opacity-30"><Plus size={12} /></button>
                     </span>
                   </div>
                   )}
                 </li>
               ))}
             </ul>
+            {!charity && (
+              <textarea aria-label="Order note" value={note} maxLength={200} rows={2} onChange={(e) => setNote(e.target.value)} placeholder="Note for the cart (e.g. no ice, gluten-free)"
+                className="mt-2 w-full resize-none rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white placeholder-white/30 focus:outline-none" />
+            )}
             {charity && <p className="mt-2 text-[10px] text-white/45">{mulligansBought} bought · {mullRoom} left under the organizer limit</p>}
             {err && <p role="alert" className="mt-2 text-center text-[11px] text-rose-300">{err}</p>}
             <button
