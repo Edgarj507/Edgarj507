@@ -194,6 +194,36 @@ Migration: `supabase/migrations/20260925010000_pin_tracking.sql`. Tests: `supaba
 
 **Undo:** staff corrections are recorded with their inverse action (`inverseOf`). Starting or ending a tournament is intentionally not undoable, because it starts or stops location sharing.
 
+## 12. Comms, SOS, inventory, organizers & course verification
+
+Migration `20261002000000_comms_inventory_organizers.sql`; tests in `supabase/tests/comms_inventory.test.ts`.
+
+| Area | Who can do what (enforced by RLS / triggers) |
+|---|---|
+| **Store & inventory** (`menu_items`) | Only that course's staff can insert, update or delete items. Golfers see only items that are `active` and `visible`. `price_order()` refuses hidden and sold-out items, decrements stock atomically (`for update`) and restocks on cancel. |
+| **Charity mulligans** | Sold only while `course_settings.in_house` **and** `tournament_live` are on (`charity_closed`). The per-player limit still applies, and cancelled orders don't count toward it. |
+| **Phone-in orders** | `source = 'phone'` requires course staff (`staff_only`) plus the golfer's name and an E.164 phone number. A free-text note (≤ 200 chars, no `<>`) is allowed. Phone orders bypass the Live Ordering switch, but not kitchen hours or stock. |
+| **Beverage carts** | Staff only, so golfers can't see where the carts are. Every order is assigned server-side to the nearest active cart, with ties going to the lighter load. Only staff can reassign. |
+| **Messages** | A golfer can write only in their own thread, as `player`. Staff and carts write as `staff`/`cart`. Each side can flip only its own read flag, and the body is immutable. Limit: 20 messages per minute per sender. Bodies are plain text (no `<>`). |
+| **Broadcasts** | Staff can send to any audience. Organizers can send only `event` broadcasts, and only for events they own. Event broadcasts are readable only by that event's registered golfers (captain, or roster phone matched to the verified auth phone). Limit: 10 broadcasts per 10 minutes. |
+| **SOS** | A golfer can raise an alert only for themselves, and cart SOS requires staff. One open alert per reporter. Only staff can read other people's alerts. The reporter can cancel only while the alert is still `active`. Staff acknowledge (the server stamps `ack_by`/`ack_at`) and resolve; closed alerts can't be reopened. |
+| **Organizers & events** | Only verified `organizers` can create events, and only at directory `venues`. `course_name` is derived from the venue and `organizer_id` is forced to the caller. They can edit only their own events, and delete only those with no registrations. Ownership changes are admin/service-role only. Organizers can read and check in their own events' teams. |
+| **Course verification** | The applicant creates a `pending` claim with proof (private storage path). Only platform admins can read claims from others or decide them, and each claim is decided once. **Approval is what grants Clubhouse OS access:** it creates the `staff_members` row and the `course_settings` row. |
+| **Favorites / shares** | Favorites are private. Event shares can go only to **accepted friends**; they can't be sent to strangers. |
+
+**Client side:**
+- **Weather.** Coordinates sent to Open-Meteo and NWS are rounded to about 1 km. The personal weather guard uses GPS only for the lookup and never shares it with the course.
+- **SOS triggering.** SOS requires a 1.5 s press-and-hold to prevent pocket-dials, and always offers `tel:911`.
+- **Uploads.** Proof uploads are re-encoded (images, EXIF stripped) or checked for the `%PDF-` magic bytes, and capped at 1.5 MB.
+- **Radar pins.** Map pins are LngLat-anchored MapLibre markers; styling is on an inner node, so pins don't drift when zooming. The SVG fallback zooms only its `viewBox`.
+
+**Demo-mode limitations** (no `VITE_SUPABASE_URL`):
+- The local store checks roles in `opsReducer`, but anyone with the device can switch roles.
+- The **"Demo: approve"** button on course claims stands in for the Exclusive.Golf admin review.
+- Organizer sign-in isn't verified.
+- Push notifications only reach phones with the app open or backgrounded (Web Notifications). Delivering to closed apps needs APNs/FCM from a server function.
+- The lightning risk score is a heuristic (thunderstorm codes, NWS warnings, CAPE). Strike-distance alerts need a licensed feed plugged into `LightningProvider`.
+
 ## Deploying
 ```bash
 supabase link --project-ref <ref>

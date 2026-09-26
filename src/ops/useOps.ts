@@ -52,18 +52,22 @@ function read(): OpsState {
   return s;
 }
 
+// Other useOps() hooks in this same page (BroadcastChannel never delivers to its own sender).
+const local = new Set<(s: OpsState) => void>();
+
 export function useOps(role: Role) {
   const [state, setState] = useState<OpsState>(read);
   useEffect(() => {
     const onMsg = () => setState(read());
     chan?.addEventListener('message', onMsg);
     window.addEventListener('storage', onMsg);
-    return () => { chan?.removeEventListener('message', onMsg); window.removeEventListener('storage', onMsg); };
+    local.add(setState);
+    return () => { chan?.removeEventListener('message', onMsg); window.removeEventListener('storage', onMsg); local.delete(setState); };
   }, []);
   const dispatch = useCallback((a: OpsAction) => {
     const next = opsReducer(read(), a, role);
     try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* quota */ }
-    setState(next);
+    local.forEach((fn) => fn(next));
     chan?.postMessage('changed');
   }, [role]);
   return [state, dispatch] as const;
