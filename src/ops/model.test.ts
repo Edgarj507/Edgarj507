@@ -1,4 +1,5 @@
 import { allowed, charityOpen, cleanTicket, csvCell, inverseOf, CANCEL_WINDOW_MS, eodTally, validBanner, cleanOrganizerText, localDate, balance, blankContact, blockFor, blockLabel, dayBlock, filledCount, groupStatus, initialOps, isOpenAt, opsReducer, validateBlock, validateTeam, STANDARD_MIN_PER_HOLE, type Order, type Registration, type TeeBlock, type TeeBooking } from './model';
+import { relevantBroadcasts } from './comms';
 
 const order = (over: Partial<Order> = {}): Order => ({ id: 'o1', kind: 'order', createdAt: 1, player: 'Edgar', hole: 4, lat: 44, lng: -92, items: [{ sku: 'TEES', name: 'Tees (pack)', price: 5, qty: 1, kind: 'shop' }], total: 5, status: 'new', ...over });
 
@@ -378,5 +379,25 @@ describe('events & course verification', () => {
     expect(opsReducer(initialOps(), { type: 'verifyRequest', request: { ...v, proof: undefined } }, 'player').verifications).toHaveLength(0);
     expect(opsReducer(s, { type: 'verifyDecision', id: 'v', status: 'approved' }, 'staff')).toBe(s); // course staff can't approve
     expect(opsReducer(s, { type: 'verifyDecision', id: 'v', status: 'approved' }, 'admin').verifications[0].status).toBe('approved');
+  });
+});
+
+describe('event sharing & broadcast targeting', () => {
+  it('in-app shares go to a friend handle once, for real events only', () => {
+    const sh = { id: 'sh1', eventId: 'kids-cup-2026', fromName: 'Edgar <b>', toHandle: '@JThomas', at: 1 };
+    let s = opsReducer(initialOps(), { type: 'shareEvent', share: sh }, 'player');
+    expect(s.shares[0]).toMatchObject({ toHandle: 'jthomas', fromName: 'Edgar b' });
+    expect(opsReducer(s, { type: 'shareEvent', share: { ...sh, id: 'sh2' } }, 'player')).toBe(s); // no repeat spam
+    expect(opsReducer(s, { type: 'shareEvent', share: { ...sh, id: 'sh3', eventId: 'nope' } }, 'player')).toBe(s);
+    expect(opsReducer(s, { type: 'shareEvent', share: { ...sh, id: 'sh4', toHandle: 'a b<script>' } }, 'player')).toBe(s);
+    s = opsReducer(s, { type: 'shareSeen', toHandle: 'jthomas' }, 'player');
+    expect(s.shares[0].seen).toBe(true);
+  });
+  it('golfers only get broadcasts meant for them', () => {
+    const b = (id: string, audience: 'all' | 'on-course' | 'event', eventId?: string) => ({ id, kind: 'general' as const, severity: 'info' as const, title: 't', body: 'b', audience, eventId, author: 'x', at: 1000 });
+    const list = [b('a', 'all'), b('c', 'on-course'), b('e', 'event', 'kids-cup-2026'), b('f', 'event', 'other')];
+    expect(relevantBroadcasts(list, { onCourse: false, eventIds: [], now: 2000 }).map((x) => x.id)).toEqual(['a']);
+    expect(relevantBroadcasts(list, { onCourse: true, eventIds: ['kids-cup-2026'], now: 2000 }).map((x) => x.id)).toEqual(['a', 'c', 'e']);
+    expect(relevantBroadcasts(list, { onCourse: true, eventIds: [], now: 2000 + 13 * 3600_000 })).toEqual([]); // stale
   });
 });

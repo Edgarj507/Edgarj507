@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { DEFAULT_SETTINGS, fromMin, initialOps, localDate, opsReducer, toMin, type OpsAction, type OpsState, type Order, type Registration, type Role, type TeeBlock } from './model';
-import { demoTeeSheet, withDemoData } from './demoSeed';
+import { DEMO_VERIFICATION, demoTeeSheet, withDemoData } from './demoSeed';
 import { EVENTS } from '../tournaments/events';
 
 /**
@@ -38,7 +38,7 @@ function read(): OpsState {
         tickets: Array.isArray(raw.tickets) ? raw.tickets : [],
         // Newer collections: fall back to the defaults for older saves.
         ...Object.fromEntries((['menu', 'carts', 'messages', 'broadcasts', 'sos', 'events', 'verifications', 'shares'] as const)
-          .map((k) => [k, Array.isArray(raw[k]) ? raw[k] : initialOps()[k]])),
+          .map((k) => [k, Array.isArray(raw[k]) ? raw[k] : k === 'verifications' && DEMO ? [DEMO_VERIFICATION] : initialOps()[k]])),
         // 'delivered' was renamed 'completed' (End of Day tally counts completed orders).
         orders: raw.orders.map((o: Omit<Order, 'status'> & { status: string }) => (o.status === 'delivered' ? { ...o, status: 'completed', completedAt: o.completedAt ?? o.createdAt } : o)),
       };

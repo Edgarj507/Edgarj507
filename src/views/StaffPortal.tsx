@@ -5,6 +5,7 @@ import { createStaffPin, PIN_RE } from '../lib/staffPin';
 import { biometricAvailable, enroll, isEnrolled, verify } from '../lib/webauthn';
 import { useRole } from '../auth/RoleContext';
 import { supabase } from '../lib/supabase';
+import { useOps } from '../ops/useOps';
 
 /**
  * Cloud mode: the PIN / Face ID only unlocks this *device*; the account must also be a staff
@@ -36,6 +37,9 @@ export function StaffPortal({ onClose }: { onClose: () => void }) {
   const [lockedFor, setLockedFor] = useState(pinStore.lockedFor());
   const [bio, setBio] = useState(false);
   const [offerEnroll, setOfferEnroll] = useState(false);
+  // A device can only be set up for the Clubhouse OS once its course is verified (onboarding).
+  const [ops] = useOps('player');
+  const verified = ops.verifications.some((v) => v.status === 'approved');
 
   useEffect(() => { void biometricAvailable().then(setBio); }, []);
   useEffect(() => {
@@ -71,6 +75,7 @@ export function StaffPortal({ onClose }: { onClose: () => void }) {
 
   const press = (d: string) => {
     if (lockedFor) return;
+    if (setup && !verified && !supabase) { setMsg('Register and verify your course first.'); return; }
     const next = (pin + d).slice(0, 6);
     setPin(next);
     if (PIN_RE.test(next)) void submit(next);
@@ -101,6 +106,9 @@ export function StaffPortal({ onClose }: { onClose: () => void }) {
         <Lock size={11} /> Clubhouse OS
       </div>
       <div className="mb-4 text-center text-sm font-bold text-white">{setup ? (first ? 'Confirm staff PIN' : 'Create a 6-digit staff PIN') : 'Enter staff PIN'}</div>
+      {setup && !verified && !supabase && (
+        <p className="mb-3 rounded-xl border border-amber-300/30 bg-amber-300/10 p-2 text-center text-[11px] text-amber-100">No verified course on this device yet. Use <b>Register your course</b> in the Clubhouse Portal; the PIN can be created once Exclusive.Golf approves it.</p>
+      )}
       <div className="mb-3 flex justify-center gap-2.5" aria-label={`${pin.length} of 6 digits`}>
         {Array.from({ length: 6 }, (_, i) => (
           <span key={i} className={`h-3 w-3 rounded-full border ${i < pin.length ? 'border-emerald-400 bg-emerald-400' : 'border-white/30'}`} />

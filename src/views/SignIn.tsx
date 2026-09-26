@@ -1,6 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { haptic } from '../lib/haptics';
-import { Lock, Mail, Phone, ScanFace, Target, UserRound, WifiOff } from 'lucide-react';
+import { Building2, CalendarRange, Flag, Lock, Mail, Phone, ScanFace, ShieldCheck, Target, UserRound, WifiOff } from 'lucide-react';
+import { useRole } from '../auth/RoleContext';
+import { supabase } from '../lib/supabase';
+import { CourseVerificationWizard } from '../onboarding/CourseVerification';
+import { EMAIL_RE, sanitizeText } from '../../supabase/functions/_shared/validation.ts';
 import { useAuth } from '../auth/AuthContext';
 import { biometricAvailable, enroll, isEnrolled, verify } from '../lib/webauthn';
 import { StaffPortal } from './StaffPortal';
@@ -10,7 +14,134 @@ import { accept, hasAccepted } from '../legal/consent';
 const field = 'w-full rounded-xl border border-white/10 bg-black/40 py-3 pl-9 pr-3 text-sm text-white placeholder-white/30 backdrop-blur-md focus:border-emerald-500/50 focus:outline-none';
 const REMEMBER = 'eg.player.remember.v1';
 
+type Portal = 'clubhouse' | 'golfer' | 'organizer';
+const PORTALS: { id: Portal; label: string; icon: typeof Flag }[] = [
+  { id: 'clubhouse', label: 'Clubhouse', icon: Building2 },
+  { id: 'golfer', label: 'Golfers', icon: Flag },
+  { id: 'organizer', label: 'Organizers', icon: CalendarRange },
+];
+
+/**
+ * Role-based landing: three doors into the platform.
+ *  • Clubhouse Portal — course staff (PIN / Face ID) and new-course onboarding with verification.
+ *  • Regular Golfers — phone / email / Apple / Google sign-in to the player app.
+ *  • Tournament Organizers — the Organizer OS (events across verified venues).
+ */
 export function SignIn() {
+  const [portal, setPortal] = useState<Portal>('golfer');
+  return (
+    <div className="relative flex h-full w-full flex-col">
+      <div role="tablist" aria-label="Sign in as" className="z-10 mx-5 mt-5 flex gap-1 rounded-2xl border border-white/10 bg-black/50 p-1 backdrop-blur-xl pt-safe">
+        {PORTALS.map(({ id, label, icon: I }) => (
+          <button key={id} role="tab" aria-selected={portal === id} onClick={() => setPortal(id)}
+            className={`flex flex-1 flex-col items-center gap-0.5 rounded-xl py-2 text-[9px] font-black uppercase tracking-widest ${portal === id ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-400/30' : 'text-white/50'}`}>
+            <I size={14} />{label}
+          </button>
+        ))}
+      </div>
+      <div className="min-h-0 flex-1">
+        {portal === 'golfer' ? <GolferSignIn /> : portal === 'clubhouse' ? <ClubhousePortal /> : <OrganizerSignIn />}
+      </div>
+    </div>
+  );
+}
+
+function Brand({ sub }: { sub: string }) {
+  return (
+    <div className="mb-auto mt-6 flex flex-col items-start">
+      <div className="mb-2 grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-white/5 shadow-lg backdrop-blur-sm"><Target size={15} className="text-emerald-400" /></div>
+      <h1 className="text-xs font-black tracking-[0.25em] text-white">EXCLUSIVE.GOLF</h1>
+      <div className="mt-2 h-[2px] w-6 rounded-full bg-emerald-500/80" />
+      <p className="mt-2 text-[11px] text-white/55">{sub}</p>
+    </div>
+  );
+}
+
+function ClubhousePortal() {
+  const [staff, setStaff] = useState(false);
+  const [wizard, setWizard] = useState(false);
+  return (
+    <div className="relative flex h-full w-full flex-col justify-end p-5">
+      <Brand sub="Clubhouse Portal — for course staff" />
+      <div className="flex flex-col gap-2 rounded-3xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-2xl">
+        <button onClick={() => setStaff(true)} className="flex h-14 items-center gap-3 rounded-2xl bg-emerald-500 px-4 text-left text-black">
+          <ShieldCheck size={20} /><span><span className="block text-[12px] font-black uppercase tracking-widest">Staff sign-in</span><span className="text-[10px] opacity-75">PIN or Face ID on this tablet</span></span>
+        </button>
+        <button onClick={() => setWizard(true)} className="flex h-14 items-center gap-3 rounded-2xl border border-white/15 bg-black/40 px-4 text-left text-white">
+          <Building2 size={20} className="text-emerald-300" /><span><span className="block text-[12px] font-black uppercase tracking-widest">Register your course</span><span className="text-[10px] text-white/55">Claim your course · verify you manage it</span></span>
+        </button>
+        <p className="px-1 text-[10px] text-white/45">New courses are verified by Exclusive.Golf before the Clubhouse OS can be set up.</p>
+      </div>
+      {staff && <StaffPortal onClose={() => setStaff(false)} />}
+      {wizard && <CourseVerificationWizard onClose={() => setWizard(false)} />}
+    </div>
+  );
+}
+
+/** Cloud: an organizer is a signed-in account listed in `organizers` (RLS: read own row). */
+async function serverOrganizerCheck(): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('organizers').select('id').limit(1);
+  if (error) return 'Could not verify organizer access. Try again.';
+  return data?.length ? null : 'This account is not registered as a tournament organizer.';
+}
+
+function OrganizerSignIn() {
+  const { unlockOrganizer } = useRole();
+  const { signIn, cloud } = useAuth();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [org, setOrg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const needsConsent = !(hasAccepted('tos') && hasAccepted('privacy'));
+  const [agreed, setAgreed] = useState(false);
+  const [agreeErr, setAgreeErr] = useState(false);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setErr(null);
+    if (sanitizeText(name, 60).length < 2) return setErr('Enter your name.');
+    if (!EMAIL_RE.test(email.trim())) return setErr('Enter a valid email.');
+    if (needsConsent && !agreed) { setAgreeErr(true); haptic('error'); return; }
+    if (needsConsent) accept(['tos', 'privacy'], 'signup');
+    setBusy(true);
+    if (cloud) {
+      const e1 = await signIn(email, password);
+      if (e1) { setBusy(false); return setErr(e1); }
+      const denied = await serverOrganizerCheck();
+      if (denied) { setBusy(false); return setErr(denied); }
+    }
+    setBusy(false);
+    haptic('success');
+    unlockOrganizer(`${sanitizeText(name, 60)}${org.trim() ? ` · ${sanitizeText(org, 60)}` : ''}`);
+  };
+
+  return (
+    <div className="relative flex h-full w-full flex-col justify-end p-5">
+      <Brand sub="Tournament Organizers — run events at any verified course" />
+      <form onSubmit={submit} noValidate className="flex flex-col gap-2.5 rounded-3xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-2xl" aria-label="Organizer sign-in">
+        <label className="relative"><span className="sr-only">Your name</span><UserRound size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+          <input aria-label="Organizer name" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} placeholder="Your name" className={field} /></label>
+        <label className="relative"><span className="sr-only">Organization</span><CalendarRange size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+          <input aria-label="Organization" value={org} maxLength={60} onChange={(e) => setOrg(e.target.value)} placeholder="Organization (optional)" className={field} /></label>
+        <label className="relative"><span className="sr-only">Email</span><Mail size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+          <input aria-label="Organizer email" type="email" value={email} maxLength={254} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className={field} /></label>
+        {cloud && (
+          <label className="relative"><span className="sr-only">Password</span><Lock size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+            <input aria-label="Password" type="password" autoComplete="current-password" value={password} maxLength={128} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className={field} /></label>
+        )}
+        {needsConsent && <LegalConsent docs={['tos', 'privacy']} checked={agreed} onChange={(v) => { setAgreed(v); setAgreeErr(false); }} error={agreeErr} />}
+        {!cloud && <p className="px-1 text-[9px] text-amber-200/70">Demo mode: organizer accounts are verified by email once the backend is configured.</p>}
+        {err && <p role="alert" className="px-1 text-[11px] text-rose-300">{err}</p>}
+        <button disabled={busy} className="h-12 rounded-2xl bg-emerald-500 text-xs font-black uppercase tracking-[0.2em] text-black disabled:opacity-50">{busy ? '…' : 'Open Organizer OS'}</button>
+      </form>
+    </div>
+  );
+}
+
+function GolferSignIn() {
   const { signIn, signUp, signInWithProvider, signInWithPhone, verifyPhoneCode, continueAsGuest, cloud } = useAuth();
   const [tab, setTab] = useState<'phone' | 'email'>('phone');
   const [mode, setMode] = useState<'in' | 'up'>('in');

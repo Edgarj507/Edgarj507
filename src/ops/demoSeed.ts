@@ -1,3 +1,4 @@
+import type { CourseVerification } from './venues';
 import { blankContact, localDate, type Contact, type OpsState, type Registration, type TeeBlock, type TeeBooking } from './model';
 
 /**
@@ -57,5 +58,14 @@ export function demoTeeBlocks(now = Date.now()): TeeBlock[] {
 }
 
 export function withDemoData(s: OpsState, eventId: string): OpsState {
-  return { ...s, registrations: [...demoRegistrations(eventId), ...s.registrations], teeSheet: [...demoTeeSheet(), ...s.teeSheet], teeBlocks: [...demoTeeBlocks(), ...s.teeBlocks] };
+  return {
+    ...s, registrations: [...demoRegistrations(eventId), ...s.registrations], teeSheet: [...demoTeeSheet(), ...s.teeSheet], teeBlocks: [...demoTeeBlocks(), ...s.teeBlocks],
+    // The demo course is already verified, so the Clubhouse OS can be set up on this device.
+    verifications: [DEMO_VERIFICATION, ...s.verifications],
+  };
 }
+
+export const DEMO_VERIFICATION: CourseVerification = {
+  id: 'demo-somerby-verified', venueId: 'somerby', venueName: 'Somerby Golf Club', applicant: 'Demo General Manager', title: 'General Manager',
+  email: 'gm@somerby.example', phone: '(507) 555-0100', submittedAt: Date.UTC(2026, 0, 5), status: 'approved', decidedAt: Date.UTC(2026, 0, 6),
+};

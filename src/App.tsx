@@ -24,6 +24,7 @@ import { usePrefs } from './i18n/prefs';
 import { completeRemoteRound, useRoundSync } from './lib/sync';
 import { useRole } from './auth/RoleContext';
 import { ClubhouseOS } from './clubhouse/ClubhouseOS';
+import { OrganizerOS } from './organizer/OrganizerOS';
 import { StaffPortal } from './views/StaffPortal';
 import { Tournaments } from './tournaments/Tournaments';
 import { TrackingNotice } from './views/TrackingNotice';
@@ -683,6 +684,15 @@ export default function App() {
       <div className="h-dvh w-full bg-black font-sans desktop:flex desktop:items-center desktop:justify-center desktop:bg-zinc-950 desktop:p-4">
         <div className="relative h-full w-full overflow-hidden bg-zinc-950 desktop:aspect-[4/3] desktop:h-auto desktop:max-h-[calc(100dvh-2rem)] desktop:w-[min(1280px,calc(100vw-2rem),calc((100dvh-2rem)*4/3))] desktop:rounded-[2rem] desktop:border-[10px] desktop:border-zinc-900 desktop:shadow-[0_0_50px_rgba(0,0,0,0.5)]">
           <ClubhouseOS />
+        </div>
+      </div>
+    );
+  }
+  if (role === 'organizer') {
+    return (
+      <div className="h-dvh w-full bg-black font-sans desktop:flex desktop:items-center desktop:justify-center desktop:bg-zinc-950 desktop:p-4">
+        <div className="relative h-full w-full overflow-hidden bg-zinc-950 desktop:aspect-[4/3] desktop:h-auto desktop:max-h-[calc(100dvh-2rem)] desktop:w-[min(1280px,calc(100vw-2rem),calc((100dvh-2rem)*4/3))] desktop:rounded-[2rem] desktop:border-[10px] desktop:border-zinc-900 desktop:shadow-[0_0_50px_rgba(0,0,0,0.5)]">
+          <OrganizerOS />
         </div>
       </div>
     );

@@ -133,7 +133,15 @@ export const DEFAULT_SETTINGS: OpsSettings = {
   tournamentLive: false, liveSince: null, inHouse: false, activeEventId: 'kids-cup-2026',
 };
 
-export const SEED_EVENTS: TournamentEvent[] = EVENTS.map((e) => ({ ...e, venueId: 'somerby', startsOn: '2026-10-17', organizer: 'Rochester Youth Golf Foundation', status: 'scheduled' as const }));
+export const SEED_EVENTS: TournamentEvent[] = [
+  ...EVENTS.map((e) => ({ ...e, venueId: 'somerby', startsOn: '2026-10-17', organizer: 'Rochester Youth Golf Foundation', status: 'scheduled' as const })),
+  {
+    id: 'rotary-fall-2026', name: 'Rotary Fall Classic', course: 'Eastwood Golf Course', date: 'Sat, Oct 24 · 9:00 AM shotgun', longDate: 'Saturday, October 24, 2026',
+    time: 'Check-in 8:00 AM · 9:00 AM shotgun', location: 'Eastwood Golf Course · Rochester, MN', organizerText: 'Annual Rotary scramble — lunch, contests and prizes. Proceeds fund local scholarships.',
+    format: '4-person scramble', foursomePrice: 480, mulliganPrice: 10, cause: 'Benefits Rotary scholarships', teams: 24,
+    venueId: 'eastwood', startsOn: '2026-10-24', organizer: 'Rochester Rotary', status: 'scheduled',
+  },
+];
 
 export const initialOps = (): OpsState => ({
   v: 1, settings: { ...DEFAULT_SETTINGS }, orders: [], registrations: [], teeSheet: [], teeBlocks: [], positions: [], eventDetails: {}, tickets: [],
