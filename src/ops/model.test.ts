@@ -1,6 +1,6 @@
-import { cleanTicket, csvCell, inverseOf, CANCEL_WINDOW_MS, eodTally, validBanner, cleanOrganizerText, localDate, balance, blankContact, blockFor, blockLabel, dayBlock, filledCount, groupStatus, initialOps, isOpenAt, opsReducer, validateBlock, validateTeam, STANDARD_MIN_PER_HOLE, type Order, type Registration, type TeeBlock, type TeeBooking } from './model';
+import { allowed, charityOpen, cleanTicket, csvCell, inverseOf, CANCEL_WINDOW_MS, eodTally, validBanner, cleanOrganizerText, localDate, balance, blankContact, blockFor, blockLabel, dayBlock, filledCount, groupStatus, initialOps, isOpenAt, opsReducer, validateBlock, validateTeam, STANDARD_MIN_PER_HOLE, type Order, type Registration, type TeeBlock, type TeeBooking } from './model';
 
-const order = (over: Partial<Order> = {}): Order => ({ id: 'o1', kind: 'order', createdAt: 1, player: 'Edgar', hole: 4, lat: 44, lng: -92, items: [], total: 9, status: 'new', ...over });
+const order = (over: Partial<Order> = {}): Order => ({ id: 'o1', kind: 'order', createdAt: 1, player: 'Edgar', hole: 4, lat: 44, lng: -92, items: [{ sku: 'TEES', name: 'Tees (pack)', price: 5, qty: 1, kind: 'shop' }], total: 5, status: 'new', ...over });
 
 describe('ops reducer RBAC', () => {
   it('players cannot change settings or order status; staff can', () => {
@@ -20,7 +20,7 @@ describe('ops reducer RBAC', () => {
   it('enforces the organizer mulligan limit per player; charity keeps selling with ordering off', () => {
     const m = (id: string, qty: number, player = 'Edgar') =>
       order({ id, player, items: [{ sku: 'MULLIGAN', name: 'Mulligan', price: 10, qty, kind: 'charity' }], total: 10 * qty });
-    let s = opsReducer(initialOps(), { type: 'setting', patch: { mulliganLimit: 3, liveOrdering: false } }, 'staff');
+    let s = opsReducer(initialOps(), { type: 'setting', patch: { mulliganLimit: 3, liveOrdering: false, inHouse: true, tournamentLive: true } }, 'staff');
     s = opsReducer(s, { type: 'order', order: m('a', 2) }, 'player');
     expect(s.orders[0]).toMatchObject({ status: 'completed', completedAt: 1 });
     expect(opsReducer(s, { type: 'order', order: m('b', 2) }, 'player')).toBe(s);
@@ -285,5 +285,98 @@ describe('CSV injection', () => {
     expect(csvCell('=HYPERLINK("http://x")')).toBe(`"'=HYPERLINK(""http://x"")"`);
     expect(csvCell('+1')).toBe("'+1");
     expect(csvCell('Draft Beer')).toBe('Draft Beer');
+  });
+});
+
+describe('inventory, carts & phone-in orders', () => {
+  const tees = (qty = 1) => ({ sku: 'TEES', name: 'x', price: 0.01, qty, kind: 'shop' as const });
+  it('prices from inventory (client price ignored), tracks stock, restocks on cancel', () => {
+    const t = Date.now();
+    let s = opsReducer(initialOps(), { type: 'order', order: order({ id: 'a', createdAt: t, items: [tees(2)], total: 0.02 }) }, 'player');
+    expect(s.orders[0]).toMatchObject({ total: 10, items: [{ name: 'Tees (pack)', price: 5 }] });
+    expect(s.menu.find((m) => m.sku === 'TEES')!.stock).toBe(58);
+    s = opsReducer(s, { type: 'cancel', id: 'a', player: 'Edgar', at: t + 1000 }, 'player');
+    expect(s.menu.find((m) => m.sku === 'TEES')!.stock).toBe(60);
+  });
+  it('refuses hidden, unknown and sold-out items', () => {
+    let s = opsReducer(initialOps(), { type: 'menuUpsert', item: { sku: 'CAP', name: 'Cap', category: 'apparel', price: 28, stock: 1, visible: true } }, 'staff');
+    expect(opsReducer(s, { type: 'order', order: order({ items: [{ sku: 'CAP', name: 'Cap', price: 28, qty: 2, kind: 'shop' }] }) }, 'player')).toBe(s);
+    s = opsReducer(s, { type: 'menuUpsert', item: { sku: 'CAP', name: 'Cap', category: 'apparel', price: 28, stock: 5, visible: false } }, 'staff');
+    expect(opsReducer(s, { type: 'order', order: order({ items: [{ sku: 'CAP', name: 'Cap', price: 28, qty: 1, kind: 'shop' }] }) }, 'player')).toBe(s);
+    expect(opsReducer(s, { type: 'order', order: order({ items: [{ sku: 'NOPE', name: 'x', price: 1, qty: 1, kind: 'shop' }] }) }, 'player')).toBe(s);
+    expect(opsReducer(s, { type: 'menuUpsert', item: { sku: 'CAP', name: 'Cap', category: 'apparel', price: 28, stock: 5, visible: true } }, 'player')).toBe(s);
+  });
+  it('charity mulligans only during a live in-house tournament', () => {
+    const m = order({ items: [{ sku: 'MULLIGAN', name: 'M', price: 10, qty: 1, kind: 'charity' }] });
+    expect(opsReducer(initialOps(), { type: 'order', order: m }, 'player').orders).toHaveLength(0);
+    const live = opsReducer(initialOps(), { type: 'setting', patch: { inHouse: true, tournamentLive: true } }, 'staff');
+    expect(charityOpen(live.settings)).toBe(true);
+    expect(opsReducer(live, { type: 'order', order: m }, 'player').orders).toHaveLength(1);
+  });
+  it('dispatches to the nearest active beverage cart (course is a loop)', () => {
+    const t = Date.now();
+    const s0 = opsReducer(initialOps(), { type: 'cartUpdate', id: 'cart-2', patch: { hole: 17 } }, 'staff');
+    expect(opsReducer(s0, { type: 'order', order: order({ id: 'x', hole: 18, createdAt: t }) }, 'player').orders[0].cartId).toBe('cart-2'); // 17→18 beats 3→18 (3 holes via the loop)
+    expect(opsReducer(s0, { type: 'order', order: order({ id: 'y', hole: 5, createdAt: t }) }, 'player').orders[0].cartId).toBe('cart-1');
+    const off = opsReducer(s0, { type: 'cartUpdate', id: 'cart-1', patch: { active: false } }, 'staff');
+    expect(opsReducer(off, { type: 'order', order: order({ id: 'z', hole: 5, createdAt: t }) }, 'player').orders[0].cartId).toBe('cart-2');
+  });
+  it('phone-in orders: staff only, note-only allowed, bypass the Live Ordering switch', () => {
+    const t = new Date(2026, 9, 17, 12).getTime();
+    const s0 = opsReducer(initialOps(), { type: 'setting', patch: { liveOrdering: false } }, 'staff');
+    const ph = order({ id: 'p', source: 'phone', phone: '507-555-0142', player: 'Pat Walker', hole: 7, createdAt: t, items: [], note: 'Gluten-free wrap, <b>no</b> mayo' });
+    const s1 = opsReducer(s0, { type: 'order', order: ph }, 'staff');
+    expect(s1.orders[0]).toMatchObject({ source: 'phone', phone: '+15075550142', note: 'Gluten-free wrap, bno/b mayo', cartId: 'cart-1' });
+    expect(opsReducer(s0, { type: 'order', order: ph }, 'player').orders).toHaveLength(0); // player can't fake a phone order
+  });
+});
+
+describe('messaging, broadcasts & SOS', () => {
+  const msg = (from: 'player' | 'staff', text = 'Can we get 2 waters on 7?') => ({ id: `m${Math.random()}`, thread: '+15075550100', threadName: 'Edgar', from, author: from === 'player' ? 'Edgar' : 'Clubhouse', text, at: 1 });
+  it('two-way chat with role-checked senders and read state', () => {
+    let s = opsReducer(initialOps(), { type: 'message', msg: msg('player') }, 'player');
+    expect(opsReducer(s, { type: 'message', msg: msg('staff') }, 'player')).toBe(s); // players can't post as staff
+    s = opsReducer(s, { type: 'message', msg: msg('staff', 'On the way!') }, 'staff');
+    expect(s.messages.map((m) => [m.from, m.readByStaff, m.readByPlayer])).toEqual([['player', false, true], ['staff', true, false]]);
+    s = opsReducer(s, { type: 'readThread', thread: '+15075550100', by: 'staff' }, 'staff');
+    expect(s.messages.every((m) => m.readByStaff)).toBe(true);
+  });
+  it('broadcasts: staff/organizer only; organizers limited to their event', () => {
+    const b = { id: 'b', kind: 'lightning' as const, severity: 'critical' as const, title: 'Lightning', body: 'Clear the course', audience: 'all' as const, author: 'Pro shop', at: 1 };
+    expect(opsReducer(initialOps(), { type: 'broadcast', broadcast: b }, 'player').broadcasts).toHaveLength(0);
+    expect(opsReducer(initialOps(), { type: 'broadcast', broadcast: b }, 'staff').broadcasts[0].audience).toBe('all');
+    expect(opsReducer(initialOps(), { type: 'broadcast', broadcast: b }, 'organizer').broadcasts[0].audience).toBe('event');
+  });
+  it('SOS: one active per person; staff acknowledge and resolve; raiser can cancel', () => {
+    const al = { id: 's1', from: 'player' as const, name: 'Edgar', hole: 7, at: 1, status: 'resolved' as const };
+    let s = opsReducer(initialOps(), { type: 'sos', alert: al }, 'player');
+    expect(s.sos[0].status).toBe('active');
+    expect(opsReducer(s, { type: 'sos', alert: { ...al, id: 's2' } }, 'player')).toBe(s);
+    expect(opsReducer(s, { type: 'sosStatus', id: 's1', status: 'resolved', by: 'x' }, 'player')).toBe(s);
+    s = opsReducer(s, { type: 'sosStatus', id: 's1', status: 'acknowledged', by: 'Pro shop' }, 'staff');
+    expect(s.sos[0]).toMatchObject({ status: 'acknowledged', ackBy: 'Pro shop' });
+    expect(opsReducer(s, { type: 'sosCancel', id: 's1', name: 'Edgar' }, 'player').sos[0].status).toBe('acknowledged'); // too late to cancel
+  });
+});
+
+describe('events & course verification', () => {
+  const ev = { ...initialOps().events[0], id: 'fall-classic', name: 'Fall Classic', venueId: 'eastwood', startsOn: '2026-11-07', time: '9:00 AM shotgun' };
+  it('organizers create events at verified venues; active event can’t change mid-tournament', () => {
+    expect(allowed('organizer', 'eventUpsert')).toBe(true);
+    expect(allowed('organizer', 'setting')).toBe(false);
+    let s = opsReducer(initialOps(), { type: 'eventUpsert', event: ev }, 'organizer');
+    expect(s.events.find((e) => e.id === 'fall-classic')).toMatchObject({ course: 'Eastwood Golf Course', longDate: 'Saturday, November 7, 2026' });
+    expect(opsReducer(s, { type: 'eventUpsert', event: { ...ev, id: 'x', venueId: 'fake-club' } }, 'organizer')).toBe(s);
+    s = opsReducer(s, { type: 'setting', patch: { tournamentLive: true } }, 'staff');
+    expect(opsReducer(s, { type: 'activeEvent', id: 'fall-classic' }, 'organizer')).toBe(s);
+  });
+  it('clubhouse claims need proof and admin approval', () => {
+    const v = { id: 'v', venueId: 'somerby', venueName: 'Somerby', applicant: 'Jamie Owner', title: 'General Manager', email: 'gm@somerby.example', phone: '507-555-0180',
+      proof: { name: 'card.png', type: 'image/png', dataUrl: 'data:image/png;base64,AAAA' }, submittedAt: 1, status: 'approved' as const };
+    const s = opsReducer(initialOps(), { type: 'verifyRequest', request: v }, 'player');
+    expect(s.verifications[0].status).toBe('pending');
+    expect(opsReducer(initialOps(), { type: 'verifyRequest', request: { ...v, proof: undefined } }, 'player').verifications).toHaveLength(0);
+    expect(opsReducer(s, { type: 'verifyDecision', id: 'v', status: 'approved' }, 'staff')).toBe(s); // course staff can't approve
+    expect(opsReducer(s, { type: 'verifyDecision', id: 'v', status: 'approved' }, 'admin').verifications[0].status).toBe('approved');
   });
 });

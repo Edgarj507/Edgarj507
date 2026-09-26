@@ -2,8 +2,14 @@ import { sanitizeText, EMAIL_RE } from '../../supabase/functions/_shared/validat
 import { normalizePhone } from '../lib/sms';
 import { courseBoundary, onProperty } from '../lib/geofence';
 import { SOMERBY_DATA } from '../data/course';
+import { cleanItem, DEFAULT_MENU, kindOf, validateItem, type StoreItem } from './store';
+import { DEFAULT_CARTS, nearestCart, type BevCart } from './carts';
+import { cleanText, validBroadcast, validMessage, type Broadcast, type ChatMessage, type SosAlert } from './comms';
+import { normalizeEvent, validateEvent, validateVerification, type CourseVerification, type TournamentEvent } from './venues';
+import { EVENTS } from '../tournaments/events';
 
-export type Role = 'player' | 'staff';
+/** player = golfer app; staff = Clubhouse OS; organizer = Tournament OS; admin = Exclusive.Golf (verifications). */
+export type Role = 'player' | 'staff' | 'organizer' | 'admin';
 
 /** 24h wall-clock times, "HH:MM". A close earlier than the open means it runs past midnight. */
 export interface Hours { open: string; close: string }
@@ -27,6 +33,8 @@ export interface OpsSettings {
   liveSince: number | null;
   /** In-house tournament: the course runs its own event, so the OS merges the tee sheet with the CRM / radar in one view. */
   inHouse: boolean;
+  /** The tournament the Clubhouse OS is running (CRM / radar). */
+  activeEventId: string;
 }
 
 /** Organizer-supplied branding for an event (text + banner/flyer). */
@@ -52,6 +60,13 @@ export interface Order {
   status: 'new' | 'enroute' | 'completed' | 'cancelled';
   /** When staff marked it completed (drives the End of Day tally). */
   completedAt?: number;
+  /** 'phone' = taken by clubhouse staff over the phone. */
+  source?: 'app' | 'phone';
+  phone?: string;
+  /** Free-text details (dietary needs, drink specifics). */
+  note?: string;
+  /** Beverage cart it was dispatched to (nearest active cart when placed). */
+  cartId?: string;
 }
 
 export interface Contact { first: string; last: string; phone: string; email: string }
@@ -98,7 +113,9 @@ export interface TeeBlock { id: string; reason: BlockReason; note?: string; star
 /** A player's last on-property GPS fix during a live event. Never stored off-property. */
 export interface LivePosition { player: string; phone: string; lat: number; lng: number; at: number }
 
-export interface OpsState { v: 1; settings: OpsSettings; orders: Order[]; registrations: Registration[]; teeSheet: TeeBooking[]; teeBlocks: TeeBlock[]; positions: LivePosition[]; eventDetails: Record<string, EventDetails>; tickets: SupportTicket[] }
+export interface OpsState { v: 1; settings: OpsSettings; orders: Order[]; registrations: Registration[]; teeSheet: TeeBooking[]; teeBlocks: TeeBlock[]; positions: LivePosition[]; eventDetails: Record<string, EventDetails>; tickets: SupportTicket[];
+  menu: StoreItem[]; carts: BevCart[]; messages: ChatMessage[]; broadcasts: Broadcast[]; sos: SosAlert[];
+  events: TournamentEvent[]; verifications: CourseVerification[] }
 
 /** Somerby property line (hole hull); positions outside it + 250 ft are refused. */
 export const COURSE_BOUNDARY = courseBoundary(SOMERBY_DATA.holes);
@@ -109,10 +126,19 @@ export const DEFAULT_SETTINGS: OpsSettings = {
   liveOrdering: true, hailCart: true, mulliganLimit: 4,
   paceMinPerHole: 14, paceAlertMin: 15,
   courseHours: { open: '06:30', close: '20:30' }, kitchenHours: { open: '11:00', close: '21:00' },
-  tournamentLive: false, liveSince: null, inHouse: false,
+  tournamentLive: false, liveSince: null, inHouse: false, activeEventId: 'kids-cup-2026',
 };
 
-export const initialOps = (): OpsState => ({ v: 1, settings: { ...DEFAULT_SETTINGS }, orders: [], registrations: [], teeSheet: [], teeBlocks: [], positions: [], eventDetails: {}, tickets: [] });
+export const SEED_EVENTS: TournamentEvent[] = EVENTS.map((e) => ({ ...e, venueId: 'somerby', startsOn: '2026-10-17', organizer: 'Rochester Youth Golf Foundation', status: 'scheduled' as const }));
+
+export const initialOps = (): OpsState => ({
+  v: 1, settings: { ...DEFAULT_SETTINGS }, orders: [], registrations: [], teeSheet: [], teeBlocks: [], positions: [], eventDetails: {}, tickets: [],
+  menu: DEFAULT_MENU.map((m) => ({ ...m })), carts: DEFAULT_CARTS.map((c) => ({ ...c })), messages: [], broadcasts: [], sos: [],
+  events: SEED_EVENTS.map((e) => ({ ...e })), verifications: [],
+});
+
+/** Charity mulligans are sold only during a live in-house tournament. */
+export const charityOpen = (st: OpsSettings) => st.inHouse && st.tournamentLive;
 
 export type OpsAction =
   | { type: 'order'; order: Order }
@@ -135,12 +161,38 @@ export type OpsAction =
   | { type: 'cancel'; id: string; player: string; at: number }
   | { type: 'ticket'; ticket: SupportTicket }
   | { type: 'ticketStatus'; id: string; status: TicketStatus; note?: string } // staff only
+  | { type: 'menuUpsert'; item: StoreItem } // staff
+  | { type: 'menuRemove'; sku: string } // staff
+  | { type: 'cartUpdate'; id: string; patch: Partial<Pick<BevCart, 'hole' | 'active' | 'name'>> } // staff
+  | { type: 'assignCart'; orderId: string; cartId: string } // staff
+  | { type: 'message'; msg: ChatMessage }
+  | { type: 'readThread'; thread: string; by: 'staff' | 'player' }
+  | { type: 'broadcast'; broadcast: Broadcast } // staff / organizer
+  | { type: 'sos'; alert: SosAlert }
+  | { type: 'sosStatus'; id: string; status: 'acknowledged' | 'resolved'; by: string } // staff
+  | { type: 'sosCancel'; id: string; name: string }
+  | { type: 'eventUpsert'; event: TournamentEvent } // staff / organizer
+  | { type: 'eventRemove'; id: string } // staff / organizer
+  | { type: 'activeEvent'; id: string } // staff / organizer
+  | { type: 'verifyRequest'; request: CourseVerification }
+  | { type: 'verifyDecision'; id: string; status: 'approved' | 'rejected'; reason?: string } // admin
   /** Live telemetry: accepted only during a live event and only on the property (+250 ft). */
   | { type: 'ping'; pos: LivePosition }
   /** Kill switch: sever a player's broadcast (left the property, event over, app closed). */
   | { type: 'unping'; phone: string };
 
-const STAFF_ONLY = new Set<OpsAction['type']>(['setting', 'status', 'book', 'unbook', 'block', 'unblock', 'eventDetails', 'editBlock', 'setPaid', 'ticketStatus', 'checkIn']);
+const STAFF_ONLY = new Set<OpsAction['type']>(['setting', 'status', 'book', 'unbook', 'block', 'unblock', 'editBlock', 'ticketStatus',
+  'menuUpsert', 'menuRemove', 'cartUpdate', 'assignCart', 'sosStatus']);
+/** Actions tournament organizers may also take (their event's CRM, page, announcements). */
+const STAFF_OR_ORGANIZER = new Set<OpsAction['type']>(['eventDetails', 'setPaid', 'checkIn', 'broadcast', 'eventUpsert', 'eventRemove', 'activeEvent']);
+const ADMIN_ONLY = new Set<OpsAction['type']>(['verifyDecision']);
+
+export function allowed(role: Role, type: OpsAction['type']) {
+  if (ADMIN_ONLY.has(type)) return role === 'admin';
+  if (STAFF_ONLY.has(type)) return role === 'staff';
+  if (STAFF_OR_ORGANIZER.has(type)) return role === 'staff' || role === 'organizer';
+  return true;
+}
 
 // ── Hours ──────────────────────────────────────────────────────────────────────────────────────
 export const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -171,13 +223,30 @@ export const needsKitchen = (o: Pick<Order, 'items'>) => o.items.some((i) => i.k
 
 /** Pure reducer. Role is checked here for the demo backend; the server enforces it with RLS. */
 export function opsReducer(s: OpsState, a: OpsAction, role: Role): OpsState {
-  if (STAFF_ONLY.has(a.type) && role !== 'staff') return s;
+  if (!allowed(role, a.type)) return s;
   switch (a.type) {
     case 'order': {
-      const o = a.order;
+      // Prices, names and categories come from the clubhouse inventory, never from the client.
+      const phone = a.order.source === 'phone' && role === 'staff';
+      const priced: OrderItem[] = [];
+      for (const i of a.order.items) {
+        const m = s.menu.find((x) => x.sku === i.sku);
+        if (!m || !m.visible || !(Number.isInteger(i.qty) && i.qty >= 1 && i.qty <= 10)) return s;
+        if (m.category === 'charity' && !charityOpen(s.settings)) return s; // tournament-only
+        if (m.stock !== null && m.stock < i.qty) return s; // sold out
+        priced.push({ sku: m.sku, name: m.name, price: m.price, qty: i.qty, kind: kindOf(m.category) });
+      }
+      const note = a.order.note ? cleanText(a.order.note, 200) : '';
+      if (a.order.kind === 'order' && !priced.length && !(phone && note)) return s;
+      const o: Order = {
+        ...a.order, items: a.order.kind === 'hail' ? [] : priced, total: priced.reduce((t, i) => t + i.price * i.qty, 0),
+        source: phone ? 'phone' : 'app', note: note || undefined,
+        phone: a.order.phone ? normalizePhone(a.order.phone) ?? undefined : undefined,
+        player: sanitizeText(a.order.player, 60) || 'Golfer', hole: clamp(Math.round(a.order.hole), 1, 18),
+      };
       // Charity mulligans are digital: they keep selling when the kitchen/cart is switched off.
       const charityOnly = o.kind === 'order' && o.items.length > 0 && o.items.every((i) => i.kind === 'charity');
-      if (o.kind === 'hail' ? !s.settings.hailCart : !charityOnly && !s.settings.liveOrdering) return s;
+      if (o.kind === 'hail' ? !s.settings.hailCart : !charityOnly && !phone && !s.settings.liveOrdering) return s;
       if (needsKitchen(o) && !isOpenAt(s.settings.kitchenHours, o.createdAt)) return s; // no ghost orders
       // Anti-spam: a player may have at most 5 open orders and 1 open cart hail.
       const open = s.orders.filter((x) => x.player === o.player && (x.status === 'new' || x.status === 'enroute'));
@@ -185,8 +254,10 @@ export function opsReducer(s: OpsState, a: OpsAction, role: Role): OpsState {
       const mulls = charityQty(o);
       if (mulls && mulligansBought(s.orders, o.player, o.createdAt) + mulls > s.settings.mulliganLimit) return s;
       // Charity mulligans are digital: nothing to deliver, so they're completed on purchase.
-      const placed: Order = charityOnly ? { ...o, status: 'completed', completedAt: o.createdAt } : { ...o, status: 'new', completedAt: undefined };
-      return { ...s, orders: [placed, ...s.orders].slice(0, 2000) };
+      const load = (cartId: string) => s.orders.filter((x) => x.cartId === cartId && isOpenOrder(x)).length;
+      const placed: Order = charityOnly ? { ...o, status: 'completed', completedAt: o.createdAt }
+        : { ...o, status: 'new', completedAt: undefined, cartId: nearestCart(s.carts, o.hole, load)?.id };
+      return { ...s, orders: [placed, ...s.orders].slice(0, 2000), menu: adjustStock(s.menu, priced, -1) };
     }
     case 'register':
       return s.registrations.some((r) => r.id === a.reg.id) ? s : { ...s, registrations: [...s.registrations, a.reg] };
@@ -194,7 +265,7 @@ export function opsReducer(s: OpsState, a: OpsAction, role: Role): OpsState {
       const reg = s.registrations.find((r) => r.id === a.id);
       if (!reg) return s;
       // Captains may edit only their own team, and only before the event goes live.
-      if (role !== 'staff' && (s.settings.tournamentLive || !a.actor || normalizePhone(a.actor) !== normalizePhone(reg.captain.phone))) return s;
+      if (role === 'player' && (s.settings.tournamentLive || !a.actor || normalizePhone(a.actor) !== normalizePhone(reg.captain.phone))) return s;
       const captain = cleanContact(a.captain ?? reg.captain);
       const roster = a.roster.map(cleanContact) as Registration['roster'];
       const v = validateTeam(a.teamName ?? reg.teamName, roster, captain);
@@ -247,8 +318,75 @@ export function opsReducer(s: OpsState, a: OpsAction, role: Role): OpsState {
     case 'cancel': {
       const o = s.orders.find((x) => x.id === a.id);
       if (!o || o.player !== a.player || o.status !== 'new' || a.at - o.createdAt > CANCEL_WINDOW_MS) return s;
-      return { ...s, orders: s.orders.map((x) => (x.id === a.id ? { ...x, status: 'cancelled' } : x)) };
+      return { ...s, orders: s.orders.map((x) => (x.id === a.id ? { ...x, status: 'cancelled' } : x)), menu: adjustStock(s.menu, o.items, +1) };
     }
+    case 'menuUpsert': {
+      if (!validateItem(a.item).ok) return s;
+      const item = cleanItem(a.item);
+      const exists = s.menu.some((m) => m.sku === item.sku);
+      return { ...s, menu: exists ? s.menu.map((m) => (m.sku === item.sku ? item : m)) : [...s.menu, item] };
+    }
+    case 'menuRemove':
+      return { ...s, menu: s.menu.filter((m) => m.sku !== a.sku) };
+    case 'cartUpdate': {
+      const p = { ...a.patch };
+      if (p.hole != null) p.hole = clamp(Math.round(p.hole), 1, 18);
+      if (p.name != null) p.name = sanitizeText(p.name, 40) || undefined;
+      return { ...s, carts: s.carts.map((c) => (c.id === a.id ? { ...c, ...p, updatedAt: Date.now() } : c)) };
+    }
+    case 'assignCart':
+      if (!s.carts.some((c) => c.id === a.cartId)) return s;
+      return { ...s, orders: s.orders.map((o) => (o.id === a.orderId ? { ...o, cartId: a.cartId } : o)) };
+    case 'message': {
+      const m = a.msg;
+      if (!validMessage(m) || (role === 'player' ? m.from !== 'player' : m.from === 'player')) return s;
+      const clean: ChatMessage = { ...m, text: cleanText(m.text, 1000), author: sanitizeText(m.author, 60) || 'Golfer', threadName: sanitizeText(m.threadName, 60) || 'Golfer',
+        readByStaff: m.from !== 'player', readByPlayer: m.from === 'player' };
+      return { ...s, messages: [...s.messages, clean].slice(-2000) };
+    }
+    case 'readThread':
+      return { ...s, messages: s.messages.map((m) => (m.thread !== a.thread ? m : a.by === 'staff' ? { ...m, readByStaff: true } : { ...m, readByPlayer: true })) };
+    case 'broadcast': {
+      const b = a.broadcast;
+      if (!validBroadcast(b)) return s;
+      // Organizers reach their own event's registrants only.
+      const audience = role === 'organizer' ? 'event' : b.audience;
+      return { ...s, broadcasts: [{ ...b, audience, title: cleanText(b.title, 120), body: cleanText(b.body, 600), author: sanitizeText(b.author, 60) }, ...s.broadcasts].slice(0, 200) };
+    }
+    case 'sos': {
+      const al = a.alert;
+      if (s.sos.some((x) => x.status === 'active' && x.name === al.name && x.from === al.from)) return s; // already raised
+      const clean: SosAlert = { ...al, name: sanitizeText(al.name, 60) || 'Unknown', note: al.note ? cleanText(al.note, 200) : undefined,
+        phone: al.phone ? normalizePhone(al.phone) ?? undefined : undefined, status: 'active', ackBy: undefined, ackAt: undefined, resolvedAt: undefined };
+      return { ...s, sos: [clean, ...s.sos].slice(0, 100) };
+    }
+    case 'sosStatus':
+      return { ...s, sos: s.sos.map((x) => (x.id !== a.id || x.status === 'resolved' || x.status === 'cancelled' ? x
+        : a.status === 'acknowledged' ? { ...x, status: 'acknowledged', ackBy: sanitizeText(a.by, 40), ackAt: Date.now() } : { ...x, status: 'resolved', resolvedAt: Date.now() })) };
+    case 'sosCancel':
+      return { ...s, sos: s.sos.map((x) => (x.id === a.id && x.name === a.name && x.status === 'active' ? { ...x, status: 'cancelled', resolvedAt: Date.now() } : x)) };
+    case 'eventUpsert': {
+      if (!validateEvent(a.event).ok) return s;
+      const e = normalizeEvent(a.event);
+      const exists = s.events.some((x) => x.id === e.id);
+      return { ...s, events: exists ? s.events.map((x) => (x.id === e.id ? e : x)) : [...s.events, e] };
+    }
+    case 'eventRemove':
+      if (s.registrations.some((r) => r.eventId === a.id) || s.settings.activeEventId === a.id) return s; // has teams / running
+      return { ...s, events: s.events.filter((e) => e.id !== a.id) };
+    case 'activeEvent':
+      if (!s.events.some((e) => e.id === a.id) || s.settings.tournamentLive) return s; // can't switch mid-event
+      return { ...s, settings: { ...s.settings, activeEventId: a.id } };
+    case 'verifyRequest': {
+      const v = a.request;
+      if (!validateVerification(v).ok) return s;
+      if (s.verifications.some((x) => x.venueId === v.venueId && x.email.toLowerCase() === v.email.trim().toLowerCase() && x.status === 'pending')) return s;
+      const clean: CourseVerification = { ...v, applicant: sanitizeText(v.applicant, 60), title: sanitizeText(v.title, 60), email: v.email.trim().toLowerCase(),
+        phone: normalizePhone(v.phone) ?? v.phone, note: v.note ? cleanText(v.note, 400) : undefined, status: 'pending', decidedAt: undefined, reason: undefined };
+      return { ...s, verifications: [clean, ...s.verifications].slice(0, 100) };
+    }
+    case 'verifyDecision':
+      return { ...s, verifications: s.verifications.map((v) => (v.id === a.id && v.status === 'pending' ? { ...v, status: a.status, decidedAt: Date.now(), reason: a.reason ? cleanText(a.reason, 200) : undefined } : v)) };
     case 'ticket': {
       const t = cleanTicket(a.ticket);
       if (!t || s.tickets.some((x) => x.id === t.id)) return s;
@@ -290,6 +428,15 @@ export function opsReducer(s: OpsState, a: OpsAction, role: Role): OpsState {
 }
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
+
+/** Apply an order's quantities to tracked stock (dir -1 = sell, +1 = restock on cancel). */
+function adjustStock(menu: StoreItem[], items: OrderItem[], dir: 1 | -1): StoreItem[] {
+  if (!items.length) return menu;
+  return menu.map((m) => {
+    const q = items.filter((i) => i.sku === m.sku).reduce((t, i) => t + i.qty, 0);
+    return q && m.stock !== null ? { ...m, stock: Math.max(0, m.stock + dir * q) } : m;
+  });
+}
 
 const charityQty = (o: Order) => o.items.reduce((a, i) => a + (i.kind === 'charity' ? i.qty : 0), 0);
 const MULLIGAN_WINDOW_MS = 18 * 3600_000;
@@ -375,6 +522,15 @@ export function inverseOf(s: OpsState, a: OpsAction): OpsAction | null {
       return { type: 'eventDetails', eventId: a.eventId, patch: { text: d.text ?? '', banner: d.banner ?? null } };
     }
     case 'ticketStatus': { const t = s.tickets.find((x) => x.id === a.id); return t ? { type: 'ticketStatus', id: t.id, status: t.status, note: t.note ?? '' } : null; }
+    case 'menuUpsert': { const m = s.menu.find((x) => x.sku === a.item.sku); return m ? { type: 'menuUpsert', item: m } : { type: 'menuRemove', sku: a.item.sku }; }
+    case 'menuRemove': { const m = s.menu.find((x) => x.sku === a.sku); return m ? { type: 'menuUpsert', item: m } : null; }
+    case 'cartUpdate': {
+      const c = s.carts.find((x) => x.id === a.id);
+      return c ? { type: 'cartUpdate', id: c.id, patch: Object.fromEntries(Object.keys(a.patch).map((k) => [k, c[k as keyof BevCart]])) as Partial<BevCart> } : null;
+    }
+    case 'assignCart': { const o = s.orders.find((x) => x.id === a.orderId); return o?.cartId ? { type: 'assignCart', orderId: o.id, cartId: o.cartId } : null; }
+    case 'eventUpsert': { const e = s.events.find((x) => x.id === a.event.id); return e ? { type: 'eventUpsert', event: e } : { type: 'eventRemove', id: a.event.id }; }
+    case 'activeEvent': return { type: 'activeEvent', id: s.settings.activeEventId };
     default: return null;
   }
 }

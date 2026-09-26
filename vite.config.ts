@@ -57,6 +57,8 @@ export default defineConfig(({ mode }) => {
         // Course directory (OpenStreetMap Overpass + Nominatim, or your own mirrors).
         ...(env.VITE_OVERPASS_URLS ?? 'https://overpass-api.de/api/interpreter').split(',').map((u) => new URL(u.trim()).origin),
         new URL(env.VITE_NOMINATIM_URL ?? 'https://nominatim.openstreetmap.org').origin,
+        // Weather: Open-Meteo conditions, NWS alerts, RainViewer radar (API + tiles).
+        'https://api.open-meteo.com', 'https://api.weather.gov', 'https://api.rainviewer.com', 'https://tilecache.rainviewer.com',
       ]),
     ],
     worker: { format: 'es' as const }, // MapLibre v6 runs its worker as an ES module
