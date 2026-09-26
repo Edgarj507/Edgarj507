@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { DEFAULT_SETTINGS, fromMin, initialOps, localDate, opsReducer, toMin, type OpsAction, type OpsState, type Registration, type Role, type TeeBlock } from './model';
+import { DEFAULT_SETTINGS, fromMin, initialOps, localDate, opsReducer, toMin, type OpsAction, type OpsState, type Order, type Registration, type Role, type TeeBlock } from './model';
 import { demoTeeSheet, withDemoData } from './demoSeed';
 import { EVENTS } from '../tournaments/events';
 
@@ -34,6 +34,9 @@ function read(): OpsState {
           ...(Array.isArray(raw.teeSheet) ? raw.teeSheet : []).filter((b: { status: string }) => b.status === 'blocked').map(legacyBlock),
         ],
         positions: Array.isArray(raw.positions) ? raw.positions : [],
+        eventDetails: raw.eventDetails && typeof raw.eventDetails === 'object' ? raw.eventDetails : {},
+        // 'delivered' was renamed 'completed' (End of Day tally counts completed orders).
+        orders: raw.orders.map((o: Omit<Order, 'status'> & { status: string }) => (o.status === 'delivered' ? { ...o, status: 'completed', completedAt: o.completedAt ?? o.createdAt } : o)),
       };
     }
   } catch { /* corrupt or blocked */ }

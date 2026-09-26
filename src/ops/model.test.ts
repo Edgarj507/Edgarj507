@@ -1,4 +1,4 @@
-import { balance, blankContact, blockFor, blockLabel, dayBlock, filledCount, groupStatus, initialOps, isOpenAt, opsReducer, validateBlock, validateTeam, STANDARD_MIN_PER_HOLE, type Order, type Registration, type TeeBlock, type TeeBooking } from './model';
+import { eodTally, validBanner, cleanOrganizerText, localDate, balance, blankContact, blockFor, blockLabel, dayBlock, filledCount, groupStatus, initialOps, isOpenAt, opsReducer, validateBlock, validateTeam, STANDARD_MIN_PER_HOLE, type Order, type Registration, type TeeBlock, type TeeBooking } from './model';
 
 const order = (over: Partial<Order> = {}): Order => ({ id: 'o1', kind: 'order', createdAt: 1, player: 'Edgar', hole: 4, lat: 44, lng: -92, items: [], total: 9, status: 'new', ...over });
 
@@ -22,7 +22,7 @@ describe('ops reducer RBAC', () => {
       order({ id, player, items: [{ sku: 'MULLIGAN', name: 'Mulligan', price: 10, qty, kind: 'charity' }], total: 10 * qty });
     let s = opsReducer(initialOps(), { type: 'setting', patch: { mulliganLimit: 3, liveOrdering: false } }, 'staff');
     s = opsReducer(s, { type: 'order', order: m('a', 2) }, 'player');
-    expect(s.orders[0].status).toBe('delivered');
+    expect(s.orders[0]).toMatchObject({ status: 'completed', completedAt: 1 });
     expect(opsReducer(s, { type: 'order', order: m('b', 2) }, 'player')).toBe(s);
     s = opsReducer(s, { type: 'order', order: m('c', 1) }, 'player');
     s = opsReducer(s, { type: 'order', order: m('d', 3, 'Sam') }, 'player');
@@ -166,5 +166,52 @@ describe('geofenced telemetry', () => {
   it('ending the event wipes all positions', () => {
     const s = opsReducer(live, { type: 'ping', pos: onCourse }, 'player');
     expect(opsReducer(s, { type: 'setting', patch: { tournamentLive: false } }, 'staff').positions).toHaveLength(0);
+  });
+});
+
+describe('fulfillment + End of Day tally', () => {
+  const day = new Date(2026, 9, 17, 12).getTime();
+  const it_ = (sku: string, name: string, price: number, qty: number, kind: 'fnb' | 'shop' | 'charity' = 'fnb') => ({ sku, name, price, qty, kind });
+  const orders: Order[] = [
+    order({ id: 'a', status: 'completed', completedAt: day, items: [it_('BEER_DRAFT', 'Draft Beer', 7, 2), it_('WATER', 'Water', 3, 1)], total: 17 }),
+    order({ id: 'b', status: 'completed', completedAt: day + 60_000, items: [it_('BEER_DRAFT', 'Draft Beer', 7, 1), it_('TEES', 'Tees', 5, 1, 'shop')], total: 12 }),
+    order({ id: 'c', status: 'completed', completedAt: day, items: [it_('MULLIGAN', 'Charity Mulligan', 10, 2, 'charity')], total: 20 }),
+    order({ id: 'h', kind: 'hail', status: 'completed', completedAt: day, items: [], total: 0 }),
+    order({ id: 'open', status: 'new', items: [it_('HOTDOG', 'Dog', 8, 1)], total: 8 }),
+    order({ id: 'y', status: 'completed', completedAt: day - 86_400_000, items: [it_('WATER', 'Water', 3, 5)], total: 15 }),
+  ];
+  it('Mark Completed stamps completion time and clears the queue', () => {
+    let s = opsReducer(initialOps(), { type: 'order', order: order({ id: 'q', createdAt: day, items: [it_('TEES', 'Tees', 5, 1, 'shop')] }) }, 'player');
+    expect(opsReducer(s, { type: 'status', id: 'q', status: 'completed' }, 'player')).toBe(s);
+    s = opsReducer(s, { type: 'status', id: 'q', status: 'completed' }, 'staff');
+    expect(s.orders[0].status).toBe('completed');
+    expect(s.orders[0].completedAt).toBeGreaterThan(0);
+  });
+  it('tallies only completed orders for the day, itemized, with revenue', () => {
+    const t = eodTally(orders, localDate(day));
+    expect(t.orders).toBe(3);
+    expect(t.hails).toBe(1);
+    expect(t.revenue).toBe(49);
+    expect(t.items[0]).toEqual({ sku: 'BEER_DRAFT', name: 'Draft Beer', kind: 'fnb', qty: 3, revenue: 21 });
+    expect(t.byKind).toEqual({ fnb: 24, shop: 5, charity: 20 });
+    expect(t.openOrders).toBe(1);
+  });
+});
+
+describe('event branding', () => {
+  const png = 'data:image/png;base64,' + 'A'.repeat(100);
+  it('accepts image/PDF flyers of the declared type under the cap', () => {
+    expect(validBanner({ name: 'flyer.png', type: 'image/png', dataUrl: png })).toBe(true);
+    expect(validBanner({ name: 'flyer.pdf', type: 'application/pdf', dataUrl: 'data:application/pdf;base64,JVBERi0=' })).toBe(true);
+    expect(validBanner({ name: 'x.svg', type: 'image/svg+xml', dataUrl: 'data:image/svg+xml;base64,PHN2Zz4=' })).toBe(false);
+    expect(validBanner({ name: 'lie.png', type: 'image/png', dataUrl: 'data:text/html;base64,PGI+' })).toBe(false);
+    expect(validBanner({ name: 'huge.png', type: 'image/png', dataUrl: 'data:image/png;base64,' + 'A'.repeat(2_100_000) })).toBe(false);
+  });
+  it('keeps line breaks, strips markup; staff only', () => {
+    expect(cleanOrganizerText('Welcome <b>golfers</b>!\n\n\n\nLunch at noon')).toBe('Welcome bgolfers/b!\n\nLunch at noon');
+    expect(opsReducer(initialOps(), { type: 'eventDetails', eventId: 'e', patch: { text: 'hi' } }, 'player').eventDetails).toEqual({});
+    const s = opsReducer(initialOps(), { type: 'eventDetails', eventId: 'e', patch: { text: 'hi', banner: { name: 'f.png', type: 'image/png', dataUrl: png } } }, 'staff');
+    expect(s.eventDetails.e).toMatchObject({ text: 'hi', banner: { name: 'f.png' } });
+    expect(opsReducer(s, { type: 'eventDetails', eventId: 'e', patch: { banner: null } }, 'staff').eventDetails.e.banner).toBeUndefined();
   });
 });

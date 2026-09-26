@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   ChevronLeft, Search, Check, Wind, Sun, Trophy, Users, MapPin,
   Target, ChevronRight, Briefcase, Share2, QrCode, UserPlus, ScanLine,
-  MessageCircle, AtSign, Link2, Settings, Trophy as TrophyIcon, Lock
+  MessageCircle, AtSign, Link2, Settings, Trophy as TrophyIcon, Lock, CircleHelp
 } from 'lucide-react';
 import { CaddieHud } from './hud/CaddieHud';
 import { MapPlaceholder } from './hud/MapPlaceholder';
@@ -27,6 +27,8 @@ import { ClubhouseOS } from './clubhouse/ClubhouseOS';
 import { StaffPortal } from './views/StaffPortal';
 import { Tournaments } from './tournaments/Tournaments';
 import { TrackingNotice } from './views/TrackingNotice';
+import { HelpCenter } from './help/HelpCenter';
+import { isOnboarded, Onboarding } from './help/Onboarding';
 import { useOps } from './ops/useOps';
 import { useTelemetry } from './ops/useTelemetry';
 import { normalizePhone } from './lib/sms';
@@ -91,6 +93,8 @@ export default function App() {
     player: auth.profile.display_name, phone: myPhone, dispatch: opsDispatch,
   });
   const [staffGate, setStaffGate] = useState(false);
+  const [help, setHelp] = useState(false);
+  const [tutorial, setTutorial] = useState(() => !isOnboarded());
   const { t, d, u } = usePrefs();
   const roundVisibility: Visibility = courseSetup.visibility ?? auth.profile.stats_visibility;
   const setupModel = lib.get(courseSetup.courseId || lib.homeIds.find(id => lib.has(id) && lib.get(id).playable) || SOMERBY.id);
@@ -157,7 +161,12 @@ export default function App() {
           <h1 className="text-xs font-black text-white tracking-[0.25em] drop-shadow-md">EXCLUSIVE.GOLF</h1>
           <div className="h-[2px] w-6 bg-emerald-500 mt-2 rounded-full opacity-80"></div>
         </div>
-        {WeatherWidgets()}
+        <div className="flex items-start gap-2">
+          {WeatherWidgets()}
+          <button onClick={() => setHelp(true)} aria-label="Help" className="pointer-events-auto grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-black/40 text-white/80 backdrop-blur-md active:scale-95">
+            <CircleHelp size={15} />
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-3 z-10 mt-auto">
@@ -693,6 +702,7 @@ export default function App() {
             buddies={liveBuddies}
             tournamentMode={courseSetup.tournamentMode}
             telemetry={telemetry.status}
+            onHelp={() => setHelp(true)}
             playerName={auth.profile.display_name}
             onBuyMulligans={(qty, price) => dispatch({ type: 'buyMulligans', player: 'me', qty, price })}
           />
@@ -715,7 +725,7 @@ export default function App() {
               {currentView === 'bag' && <BagWizard bag={bag} gear={gear} setGear={setGear} setCarry={setCarry} resetCarry={resetCarry} onExit={() => setCurrentView('menu')} />}
               {currentView === 'friends' && ViewFriends()}
               {currentView === 'profile' && <ProfileView onBack={() => setCurrentView('settings')} />}
-              {currentView === 'settings' && <SettingsView onBack={() => setCurrentView('menu')} onProfile={() => setCurrentView('profile')} onCourses={() => setCurrentView('courses')} />}
+              {currentView === 'settings' && <SettingsView onBack={() => setCurrentView('menu')} onProfile={() => setCurrentView('profile')} onCourses={() => setCurrentView('courses')} onHelp={() => setHelp(true)} onTutorial={() => setTutorial(true)} />}
               {currentView === 'courses' && (
                 <CourseSetup
                   signedIn={auth.status === 'signedIn'}
@@ -764,6 +774,8 @@ export default function App() {
           </>
         )}
         {staffGate && <StaffPortal onClose={() => setStaffGate(false)} />}
+        {!gated && tutorial && <Onboarding onDone={() => setTutorial(false)} />}
+        {help && <HelpCenter audience="player" onClose={() => setHelp(false)} onTutorial={() => { setHelp(false); setTutorial(true); }} />}
       </div>
     </div>
   );

@@ -25,7 +25,16 @@ export interface OpsSettings {
    */
   tournamentLive: boolean;
   liveSince: number | null;
+  /** In-house tournament: the course runs its own event, so the OS merges the tee sheet with the CRM / radar in one view. */
+  inHouse: boolean;
 }
+
+/** Organizer-supplied branding for an event (text + banner/flyer). */
+export interface EventBanner { name: string; type: string; dataUrl: string }
+export interface EventDetails { text?: string; banner?: EventBanner }
+export const BANNER_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'];
+/** Demo backend keeps the flyer inline; production stores it in object storage. */
+export const BANNER_MAX_BYTES = 1_500_000;
 
 export interface OrderItem { sku: string; name: string; price: number; qty: number; kind: 'fnb' | 'shop' | 'charity' }
 
@@ -39,7 +48,9 @@ export interface Order {
   lng: number;
   items: OrderItem[];
   total: number;
-  status: 'new' | 'enroute' | 'delivered';
+  status: 'new' | 'enroute' | 'completed';
+  /** When staff marked it completed (drives the End of Day tally). */
+  completedAt?: number;
 }
 
 export interface Contact { first: string; last: string; phone: string; email: string }
@@ -84,7 +95,7 @@ export interface TeeBlock { id: string; reason: BlockReason; note?: string; star
 /** A player's last on-property GPS fix during a live event. Never stored off-property. */
 export interface LivePosition { player: string; phone: string; lat: number; lng: number; at: number }
 
-export interface OpsState { v: 1; settings: OpsSettings; orders: Order[]; registrations: Registration[]; teeSheet: TeeBooking[]; teeBlocks: TeeBlock[]; positions: LivePosition[] }
+export interface OpsState { v: 1; settings: OpsSettings; orders: Order[]; registrations: Registration[]; teeSheet: TeeBooking[]; teeBlocks: TeeBlock[]; positions: LivePosition[]; eventDetails: Record<string, EventDetails> }
 
 /** Somerby property line (hole hull); positions outside it + 250 ft are refused. */
 export const COURSE_BOUNDARY = courseBoundary(SOMERBY_DATA.holes);
@@ -95,10 +106,10 @@ export const DEFAULT_SETTINGS: OpsSettings = {
   liveOrdering: true, hailCart: true, mulliganLimit: 4,
   paceMinPerHole: 14, paceAlertMin: 15,
   courseHours: { open: '06:30', close: '20:30' }, kitchenHours: { open: '11:00', close: '21:00' },
-  tournamentLive: false, liveSince: null,
+  tournamentLive: false, liveSince: null, inHouse: false,
 };
 
-export const initialOps = (): OpsState => ({ v: 1, settings: { ...DEFAULT_SETTINGS }, orders: [], registrations: [], teeSheet: [], teeBlocks: [], positions: [] });
+export const initialOps = (): OpsState => ({ v: 1, settings: { ...DEFAULT_SETTINGS }, orders: [], registrations: [], teeSheet: [], teeBlocks: [], positions: [], eventDetails: {} });
 
 export type OpsAction =
   | { type: 'order'; order: Order }
@@ -112,12 +123,13 @@ export type OpsAction =
   | { type: 'unbook'; id: string } // staff only
   | { type: 'block'; block: TeeBlock } // staff only
   | { type: 'unblock'; id: string } // staff only
+  | { type: 'eventDetails'; eventId: string; patch: EventDetails | { banner: null } } // staff only
   /** Live telemetry: accepted only during a live event and only on the property (+250 ft). */
   | { type: 'ping'; pos: LivePosition }
   /** Kill switch: sever a player's broadcast (left the property, event over, app closed). */
   | { type: 'unping'; phone: string };
 
-const STAFF_ONLY = new Set<OpsAction['type']>(['setting', 'status', 'book', 'unbook', 'block', 'unblock']);
+const STAFF_ONLY = new Set<OpsAction['type']>(['setting', 'status', 'book', 'unbook', 'block', 'unblock', 'eventDetails']);
 
 // ── Hours ──────────────────────────────────────────────────────────────────────────────────────
 export const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -158,7 +170,9 @@ export function opsReducer(s: OpsState, a: OpsAction, role: Role): OpsState {
       if (needsKitchen(o) && !isOpenAt(s.settings.kitchenHours, o.createdAt)) return s; // no ghost orders
       const mulls = charityQty(o);
       if (mulls && mulligansBought(s.orders, o.player, o.createdAt) + mulls > s.settings.mulliganLimit) return s;
-      return { ...s, orders: [{ ...o, status: (charityOnly ? 'delivered' : 'new') as Order['status'] }, ...s.orders].slice(0, 500) };
+      // Charity mulligans are digital: nothing to deliver, so they're completed on purchase.
+      const placed: Order = charityOnly ? { ...o, status: 'completed', completedAt: o.createdAt } : { ...o, status: 'new', completedAt: undefined };
+      return { ...s, orders: [placed, ...s.orders].slice(0, 2000) };
     }
     case 'register':
       return s.registrations.some((r) => r.id === a.reg.id) ? s : { ...s, registrations: [...s.registrations, a.reg] };
@@ -187,7 +201,7 @@ export function opsReducer(s: OpsState, a: OpsAction, role: Role): OpsState {
       return { ...s, settings: { ...s.settings, ...p }, ...(p.tournamentLive === false ? { positions: [] } : {}) };
     }
     case 'status':
-      return { ...s, orders: s.orders.map((o) => (o.id === a.id ? { ...o, status: a.status } : o)) };
+      return { ...s, orders: s.orders.map((o) => (o.id === a.id ? { ...o, status: a.status, completedAt: a.status === 'completed' ? o.completedAt ?? Date.now() : undefined } : o)) };
     case 'book': {
       const b = a.booking;
       if (!HHMM.test(b.time) || !DATE.test(b.date) || !validateBooking(b).ok) return s;
@@ -206,6 +220,18 @@ export function opsReducer(s: OpsState, a: OpsAction, role: Role): OpsState {
     }
     case 'unblock':
       return { ...s, teeBlocks: s.teeBlocks.filter((k) => k.id !== a.id) };
+    case 'eventDetails': {
+      const cur = s.eventDetails[a.eventId] ?? {};
+      const next: EventDetails = { ...cur };
+      if ('text' in a.patch && a.patch.text !== undefined) next.text = cleanOrganizerText(a.patch.text);
+      if ('banner' in a.patch) {
+        const b = a.patch.banner;
+        if (b === null) delete next.banner;
+        else if (b && validBanner(b)) next.banner = { name: sanitizeText(b.name, 80), type: b.type, dataUrl: b.dataUrl };
+        else return s;
+      }
+      return { ...s, eventDetails: { ...s.eventDetails, [a.eventId]: next } };
+    }
     case 'unbook':
       return { ...s, teeSheet: s.teeSheet.filter((b) => b.id !== a.id) };
     case 'ping': {
@@ -234,6 +260,47 @@ const MULLIGAN_WINDOW_MS = 18 * 3600_000;
 /** Charity mulligans a player bought in the current event window (limit is per player per 18h). */
 export const mulligansBought = (orders: Order[], player: string, now: number) =>
   orders.filter((o) => o.player === player && o.createdAt > now - MULLIGAN_WINDOW_MS).reduce((a, o) => a + charityQty(o), 0);
+
+// ── Event branding ────────────────────────────────────────────────────────────────────────────
+/** Organizer text: plain text, line breaks kept, markup stripped, 800 chars max. */
+export const cleanOrganizerText = (t: string) =>
+  t.replace(/[<>]/g, '').split(/\r?\n/).map((l) => sanitizeText(l, 200)).join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 800);
+
+/** Banner/flyer: an image or PDF data URL whose declared type matches the file, under the size cap. */
+export function validBanner(b: EventBanner) {
+  if (!BANNER_TYPES.includes(b.type)) return false;
+  if (!b.dataUrl.startsWith(`data:${b.type};base64,`)) return false;
+  return Math.floor(((b.dataUrl.length - b.dataUrl.indexOf(',') - 1) * 3) / 4) <= BANNER_MAX_BYTES;
+}
+
+// ── End of Day tally ──────────────────────────────────────────────────────────────────────────
+export interface EodLine { sku: string; name: string; kind: OrderItem['kind']; qty: number; revenue: number }
+
+/** Completed orders on a local date: count, itemized sales and revenue (charity shown separately). */
+export function eodTally(orders: Order[], date: string) {
+  const done = orders.filter((o) => o.status === 'completed' && o.completedAt != null && localDate(o.completedAt) === date);
+  const lines = new Map<string, EodLine>();
+  for (const o of done) for (const i of o.items) {
+    const l = lines.get(i.sku) ?? { sku: i.sku, name: i.name, kind: i.kind, qty: 0, revenue: 0 };
+    l.qty += i.qty;
+    l.revenue += i.qty * i.price;
+    lines.set(i.sku, l);
+  }
+  const items = [...lines.values()].sort((a, b) => b.revenue - a.revenue || a.name.localeCompare(b.name));
+  const sales = done.filter((o) => o.kind === 'order');
+  return {
+    orders: sales.length,
+    hails: done.length - sales.length,
+    items,
+    revenue: items.reduce((a, l) => a + l.revenue, 0),
+    byKind: {
+      fnb: items.filter((l) => l.kind === 'fnb').reduce((a, l) => a + l.revenue, 0),
+      shop: items.filter((l) => l.kind === 'shop').reduce((a, l) => a + l.revenue, 0),
+      charity: items.filter((l) => l.kind === 'charity').reduce((a, l) => a + l.revenue, 0),
+    },
+    openOrders: orders.filter((o) => o.status !== 'completed').length,
+  };
+}
 
 // ── Roster validation (verified contacts; open slots allowed until filled) ─────────────────────
 export type ContactErrors = Partial<Record<keyof Contact, string>>;

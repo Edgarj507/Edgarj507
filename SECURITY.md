@@ -141,6 +141,37 @@ Migration: `supabase/migrations/20260925010000_pin_tracking.sql`. Tests: `supaba
 - Group pace on the radar is simulated. A real on-property fix replaces the simulated dot.
 - The server-side geofence is a buffered bounding box; the exact hull-plus-buffer test runs on the phone.
 
+## 10. Legal, fulfillment reporting & event branding
+
+**Legal documents** (`src/legal/`): Terms of Service & EULA, Privacy Policy (including the geofencing policy) and Liability Waiver.
+- **Where they appear:** they can be opened at sign-up, at ticket checkout and from Settings → Legal.
+- **Mandatory acceptance:**
+  - Sign-up (including guest play) requires all three.
+  - Every ticket checkout requires the Waiver and the Terms.
+- **Records:** acceptances are stored by document version. Changing a document's `version` asks players to accept again.
+- **Cloud mode:** each acceptance is also written to `legal_acceptances`.
+  - The table is append-only: there are no update or delete grants.
+  - Players read only their own rows; organizers see waivers for their own event.
+- **Templates only:** the text is a plain-language TEMPLATE. Have counsel review it before launch, especially:
+  - jurisdiction;
+  - waiver enforceability and minors;
+  - captains accepting on behalf of teammates;
+  - refunds and dispute resolution.
+
+**Fulfillment and End of Day:**
+- Orders move `new` → (`enroute`) → `completed`. The old `delivered` status is migrated.
+- Only course staff can change order status (`orders_staff_update`).
+- The server stamps `completed_at` (`stamp_completion` trigger, or `price_order()` for charity-only orders); clients can't set it.
+- `eod_tally(course, day)` groups completed orders by item for the course's local date. It returns rows only for that course's staff.
+
+**Event branding:**
+- Organizers edit the message and banner/flyer: images (PNG, JPEG, WebP) or PDF, 1.5 MB max.
+- **Server:** `events_staff_edit` limits edits to course staff. `description` rejects markup, and `banner_path` only allows safe storage keys with an image or PDF extension.
+- **Client:** the file's declared type must match its data URL; SVG is rejected.
+- **Demo mode:** the flyer is kept inline. In production, upload it to an `event-banners` storage bucket (staff write, public read) and store the key.
+
+**In-House Tournament mode** (`settings.inHouse`) only changes the Clubhouse OS layout. It merges the tee sheet with the CRM / Live Radar; the privacy rules in section 9 are unchanged.
+
 ## Deploying
 ```bash
 supabase link --project-ref <ref>

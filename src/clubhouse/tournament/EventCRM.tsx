@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { BadgeDollarSign, Banknote, ChevronRight, Mail, MessageSquareText, Pencil, Search, ShieldCheck, Trophy, UserMinus, Users } from 'lucide-react';
-import { balance, blankContact, filledCount, isOpenSlot, validateTeam, type Contact, type Registration } from '../../ops/model';
+import { ImagePlus, BadgeDollarSign, Banknote, ChevronRight, Mail, MessageSquareText, Pencil, Search, ShieldCheck, Trophy, UserMinus, Users } from 'lucide-react';
+import { type EventBanner, type EventDetails, balance, blankContact, filledCount, isOpenSlot, validateTeam, type Contact, type Registration } from '../../ops/model';
 import { smsGroupLink } from '../../lib/sms';
 import type { EventInfo } from '../../tournaments/events';
 import { field, glass, Panel, Stat } from '../ui';
+import { EventPageEditor } from './EventPageEditor';
 
 type Filter = 'all' | 'balance' | 'open';
 export interface RosterPatch { teamName: string; captain: Contact; roster: Registration['roster'] }
@@ -13,13 +14,16 @@ interface Props {
   regs: Registration[];
   onSave: (id: string, p: RosterPatch) => void;
   onMarkPaid: (id: string, amount: number) => void;
+  details?: EventDetails;
+  onSaveDetails: (p: { text: string; banner: EventBanner | null }) => void;
 }
 
 /**
  * Pre-Tournament CRM. Deliberately map-free: before the event nobody's location is tracked or shown.
  * Rosters, payments and contact details only.
  */
-export function EventCRM({ event, regs, onSave, onMarkPaid }: Props) {
+export function EventCRM({ event, regs, onSave, onMarkPaid, details, onSaveDetails }: Props) {
+  const [editPage, setEditPage] = useState(false);
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [openId, setOpenId] = useState<string | null>(null);
@@ -40,7 +44,12 @@ export function EventCRM({ event, regs, onSave, onMarkPaid }: Props) {
     <div className="grid h-full min-h-0 grid-cols-1 gap-3 @4xl:grid-cols-[1.25fr_1fr]" data-testid="event-crm">
       <Panel
         title={<><Trophy size={13} className="text-amber-300" /> {event.name} · Teams</>}
-        aside={<span className="text-[10px] text-white/45">{event.date}</span>}
+        aside={
+          <span className="flex items-center gap-2">
+            <span className="text-[10px] text-white/45">{event.date}</span>
+            <button onClick={() => setEditPage(true)} className="flex h-8 items-center gap-1.5 rounded-xl border border-amber-300/30 bg-amber-300/10 px-2.5 text-[10px] font-bold uppercase tracking-widest text-amber-100"><ImagePlus size={12} /> Event page</button>
+          </span>
+        }
       >
         <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl border border-white/5 bg-black/30 px-4 py-3">
           <Stat label="Teams" value={`${regs.length}/${event.teams}`} />
@@ -90,6 +99,7 @@ export function EventCRM({ event, regs, onSave, onMarkPaid }: Props) {
             <span><Users size={22} className="mx-auto mb-2 text-white/25" />Tap a team to see contacts, edit the roster or collect a balance.</span>
           </section>
         )}
+      {editPage && <EventPageEditor event={event} details={details} onSave={onSaveDetails} onClose={() => setEditPage(false)} />}
     </div>
   );
 }

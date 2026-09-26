@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, Aperture, Car, Check, ChevronLeft, BadgeCheck, ChevronRight, Cloud, CloudOff, Flag, HandCoins, HeartHandshake, ShoppingBag, Users, RotateCcw, ShieldHalf, Volume2, VolumeX } from 'lucide-react';
+import { ArrowDown, ArrowUp, Aperture, Car, CircleHelp, Check, ChevronLeft, BadgeCheck, ChevronRight, Cloud, CloudOff, Flag, HandCoins, HeartHandshake, ShoppingBag, Users, RotateCcw, ShieldHalf, Volume2, VolumeX } from 'lucide-react';
 import { MapPlaceholder } from './MapPlaceholder';
 import { imageryProvider } from '../map/providers';
 import { aimPosition, ballPosition, holeGeometry, shotBearing } from '../map/geometry';
@@ -64,6 +64,7 @@ interface Props {
   onBuyMulligans?: (qty: number, price: number) => void;
   /** Tournament location sharing state (geofenced). */
   telemetry?: TelemetryStatus;
+  onHelp?: () => void;
 }
 
 const M_TO_YD = 1.09361;
@@ -78,7 +79,7 @@ const scoreColor = (s: string) => (s.startsWith('-') ? 'text-red-400' : s === 'E
 
 export function CaddieHud({
   hole, tee, strokes, roundScore, format, isLastHole, bag, onLog, onUndo, onNext, onScorecard, onExit, buddies = [], tournamentMode = false, sync = 'off', remoteRoundId, courseName, courseAttribution,
-  holeLines, clubStats = {}, ledger, onMulligan, onUnmulligan, playerName = 'Guest', onBuyMulligans, telemetry = 'off',
+  holeLines, clubStats = {}, ledger, onMulligan, onUnmulligan, playerName = 'Guest', onBuyMulligans, telemetry = 'off', onHelp,
 }: Props) {
   const [justLogged, setJustLogged] = useState(false);
   const [puttView, setPuttView] = useState(false);
@@ -186,7 +187,7 @@ export function CaddieHud({
     return () => clearTimeout(id);
   }, [hailed]);
   // Surface the order that's moving first (en route beats received).
-  const mine = ops.orders.filter((o) => o.player === playerName && o.status !== 'delivered');
+  const mine = ops.orders.filter((o) => o.player === playerName && o.status !== 'completed');
   const myActive = mine.find((o) => o.status === 'enroute') ?? mine[0];
   const myMulls = mulligansBought(ops.orders, playerName, Date.now());
 
@@ -322,6 +323,12 @@ export function CaddieHud({
               <button onClick={toggleVoice} aria-pressed={voice} aria-label={t('hud.voice')} title={t('hud.voice')}
                 className={`${glass} grid h-8 w-8 place-items-center rounded-full ${voice ? 'text-emerald-400 ring-1 ring-emerald-400/60' : 'text-white/60'}`}>
                 {voice ? <Volume2 size={14} /> : <VolumeX size={14} />}
+              </button>
+            )}
+            {onHelp && (
+              <button onClick={onHelp} aria-label="Help" title="Help"
+                className={`${glass} grid h-8 w-8 place-items-center rounded-full text-white/60`}>
+                <CircleHelp size={14} />
               </button>
             )}
             <button onClick={() => set({ guardian: !guardian })} aria-pressed={guardian} aria-label={t('hud.guardian')} title={t('hud.guardian')}

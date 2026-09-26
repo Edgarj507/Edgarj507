@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { CalendarClock, ChefHat, ChevronRight, Lock, MapPinOff, Radar, Settings2, ShieldCheck, Trophy, Truck, X, type LucideIcon } from 'lucide-react';
+import { CalendarClock, ChefHat, ChevronRight, CircleHelp, LayoutDashboard, Lock, MapPinOff, Radar, Receipt, Settings2, ShieldCheck, Trophy, Truck, X, type LucideIcon } from 'lucide-react';
 import { SOMERBY } from '../data/course';
 import { useOps } from '../ops/useOps';
 import { isOpenAt } from '../ops/model';
@@ -8,6 +8,8 @@ import { useRole } from '../auth/RoleContext';
 // Everyday clubhouse operations
 import { TeeSheet } from './everyday/TeeSheet';
 import { OpsSettingsView } from './everyday/OpsSettingsView';
+import { EodReport } from './everyday/EodReport';
+import { HelpCenter } from '../help/HelpCenter';
 // Tournament operations
 import { EventCRM } from './tournament/EventCRM';
 import { LiveRadar } from './tournament/LiveRadar';
@@ -17,7 +19,7 @@ import { PaceAlerts, StartTournamentSwitch } from './tournament/TournamentContro
 import { Queue } from './Queue';
 import { glass, hhmm } from './ui';
 
-type View = 'tee' | 'settings' | 'tournament';
+type View = 'tee' | 'eod' | 'settings' | 'tournament' | 'ops';
 
 const DEMO = !import.meta.env.VITE_SUPABASE_URL;
 
@@ -39,13 +41,42 @@ export function ClubhouseOS() {
   const [clock, setClock] = useState(() => Date.now());
   const [selected, setSelected] = useState<string | null>(null);
   const [queueOpen, setQueueOpen] = useState(false);
+  const [help, setHelp] = useState(false);
 
   useEffect(() => { const id = setInterval(() => setClock(Date.now()), 5_000); return () => clearInterval(id); }, []);
   const live = useLiveEvent(ops, event.id, clock);
   const select = useCallback((id: string) => setSelected((x) => (x === id ? null : id)), []);
-  const openOrders = ops.orders.filter((o) => o.status !== 'delivered').length;
+  const openOrders = ops.orders.filter((o) => o.status !== 'completed').length;
   const kitchenOpen = isOpenAt(s.kitchenHours, clock);
-  const tournament = view === 'tournament';
+  // In-House Tournament mode merges the tee sheet and tournament pages into one Operations view.
+  const current: View = s.inHouse ? (view === 'tee' || view === 'tournament' ? 'ops' : view) : view === 'ops' ? 'tee' : view;
+  const tournament = current === 'tournament';
+  const crumbs = current === 'tournament' ? ['Tournament', event.name, s.tournamentLive ? 'Live Radar' : 'Pre-Event CRM']
+    : current === 'ops' ? ['Clubhouse', 'Operations', `In-house · ${s.tournamentLive ? 'Live' : 'Pre-event'}`]
+    : ['Clubhouse', current === 'tee' ? 'Tee Sheet' : current === 'eod' ? 'End of Day' : 'Settings'];
+  const startSwitch = (
+    <div className="mt-2 rounded-xl border border-white/10 bg-black/30 p-2.5">
+      <StartTournamentSwitch live={s.tournamentLive} onChange={(v) => { dispatch({ type: 'setting', patch: { tournamentLive: v } }); setView(s.inHouse ? 'ops' : 'tournament'); }} />
+      <p className="mt-1.5 flex items-start gap-1 text-[9px] leading-snug text-white/45">
+        {s.tournamentLive ? <>Tracking on the property only (+250 ft)</> : <><MapPinOff size={10} className="mt-px shrink-0" /> No map or locations before the start</>}
+      </p>
+    </div>
+  );
+  const teeSheet = (
+    <TeeSheet bookings={ops.teeSheet} blocks={ops.teeBlocks} courseHours={s.courseHours} now={clock}
+      onBook={(b) => dispatch({ type: 'book', booking: b })} onCancel={(id) => dispatch({ type: 'unbook', id })}
+      onBlock={(k) => dispatch({ type: 'block', block: k })} onUnblock={(id) => dispatch({ type: 'unblock', id })} />
+  );
+  const tournamentView = s.tournamentLive && s.liveSince ? (
+    <LiveRadar holes={live.holes} placed={live.placed} alertMin={s.paceAlertMin} orders={ops.orders} now={live.now} liveSince={s.liveSince}
+      selected={selected} onSelect={select} onStatus={(id, st) => dispatch({ type: 'status', id, status: st })}
+      onFastForward={DEMO ? live.fastForward : undefined} />
+  ) : (
+    <EventCRM event={event} regs={live.regs} details={ops.eventDetails[event.id]}
+      onSave={(id, p) => dispatch({ type: 'roster', id, ...p })}
+      onMarkPaid={(id, amount) => dispatch({ type: 'pay', id, amount })}
+      onSaveDetails={(p) => dispatch({ type: 'eventDetails', eventId: event.id, patch: p })} />
+  );
 
   return (
     <div className="@container relative flex h-full w-full flex-col overflow-hidden bg-zinc-950 text-white" data-testid="clubhouse-os">
@@ -60,7 +91,7 @@ export function ClubhouseOS() {
             <div className="text-[10px] text-white/50">{SOMERBY.name} · {hhmm(clock)}</div>
           </div>
         </div>
-        <Breadcrumb tournament={tournament} items={tournament ? ['Tournament', event.name, s.tournamentLive ? 'Live Radar' : 'Pre-Event CRM'] : ['Clubhouse', view === 'tee' ? 'Tee Sheet' : 'Settings']} />
+        <Breadcrumb tournament={tournament} items={crumbs} />
         <div className="ml-auto flex flex-wrap items-center gap-3">
           <span role="status" className={`flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-widest ${kitchenOpen ? 'bg-emerald-500/10 text-emerald-300' : 'bg-red-500/10 text-red-300'}`}>
             <ChefHat size={11} /> Kitchen {kitchenOpen ? 'open' : 'closed'}
@@ -69,6 +100,7 @@ export function ClubhouseOS() {
             <Truck size={12} /> Orders
             {openOrders > 0 && <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-400 px-1 text-[9px] font-black text-black">{openOrders}</span>}
           </button>
+          <button onClick={() => setHelp(true)} aria-label="Help" className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/40 text-white/80"><CircleHelp size={15} /></button>
           <button onClick={lockStaff} className="flex h-8 items-center gap-1.5 rounded-full border border-white/15 bg-black/40 px-3 text-[10px] font-bold uppercase tracking-widest text-white/80 active:scale-95">
             <Lock size={12} /> Lock{staffName ? ` · ${staffName}` : ''}
           </button>
@@ -78,45 +110,49 @@ export function ClubhouseOS() {
       <div className="relative z-10 flex min-h-0 flex-1 gap-3 p-3">
         {/* ── Left rail: two clearly separated areas ── */}
         <aside className="flex w-52 shrink-0 flex-col gap-3" aria-label="Clubhouse OS navigation">
-          <section aria-label="Clubhouse operations" className={`${glass} rounded-2xl p-2`}>
-            <SectionLabel dot="bg-emerald-400" title="Clubhouse" sub="Everyday operations" />
-            <NavItem icon={CalendarClock} label="Tee Sheet" active={view === 'tee'} onClick={() => setView('tee')} tone="emerald" />
-            <NavItem icon={Settings2} label="Settings" active={view === 'settings'} onClick={() => setView('settings')} tone="emerald" />
-          </section>
+          {s.inHouse ? (
+            <section aria-label="Clubhouse operations" className={`${glass} rounded-2xl p-2`}>
+              <SectionLabel dot={s.tournamentLive ? 'bg-red-500 animate-pulse' : 'bg-emerald-400'} title="Clubhouse" sub={`In-house tournament · ${event.name}`} />
+              <NavItem icon={LayoutDashboard} label="Operations" active={current === 'ops'} onClick={() => setView('ops')} tone="emerald" badge={s.tournamentLive ? 'LIVE' : undefined} />
+              <NavItem icon={Receipt} label="End of Day" active={current === 'eod'} onClick={() => setView('eod')} tone="emerald" />
+              <NavItem icon={Settings2} label="Settings" active={current === 'settings'} onClick={() => setView('settings')} tone="emerald" />
+              {startSwitch}
+            </section>
+          ) : (
+            <>
+              <section aria-label="Clubhouse operations" className={`${glass} rounded-2xl p-2`}>
+                <SectionLabel dot="bg-emerald-400" title="Clubhouse" sub="Everyday operations" />
+                <NavItem icon={CalendarClock} label="Tee Sheet" active={current === 'tee'} onClick={() => setView('tee')} tone="emerald" />
+                <NavItem icon={Receipt} label="End of Day" active={current === 'eod'} onClick={() => setView('eod')} tone="emerald" />
+                <NavItem icon={Settings2} label="Settings" active={current === 'settings'} onClick={() => setView('settings')} tone="emerald" />
+              </section>
 
-          <section aria-label="Tournament operations" className="rounded-2xl border border-amber-300/25 bg-amber-300/[0.05] p-2 backdrop-blur-2xl">
-            <SectionLabel dot={s.tournamentLive ? 'bg-red-500 animate-pulse' : 'bg-amber-300'} title="Tournament" sub={event.name} />
-            <NavItem icon={s.tournamentLive ? Radar : Trophy} label={s.tournamentLive ? 'Live Radar' : 'Pre-Event CRM'} active={tournament} onClick={() => setView('tournament')} tone="amber"
-              badge={s.tournamentLive ? 'LIVE' : `${live.regs.length} teams`} />
-            <div className="mt-2 rounded-xl border border-white/10 bg-black/30 p-2.5">
-              <StartTournamentSwitch live={s.tournamentLive} onChange={(v) => { dispatch({ type: 'setting', patch: { tournamentLive: v } }); setView('tournament'); }} />
-              <p className="mt-1.5 flex items-start gap-1 text-[9px] leading-snug text-white/45">
-                {s.tournamentLive ? <>Tracking on the property only (+250 ft)</> : <><MapPinOff size={10} className="mt-px shrink-0" /> No map or locations before the start</>}
-              </p>
-            </div>
-          </section>
+              <section aria-label="Tournament operations" className="rounded-2xl border border-amber-300/25 bg-amber-300/[0.05] p-2 backdrop-blur-2xl">
+                <SectionLabel dot={s.tournamentLive ? 'bg-red-500 animate-pulse' : 'bg-amber-300'} title="Tournament" sub={event.name} />
+                <NavItem icon={s.tournamentLive ? Radar : Trophy} label={s.tournamentLive ? 'Live Radar' : 'Pre-Event CRM'} active={tournament} onClick={() => setView('tournament')} tone="amber"
+                  badge={s.tournamentLive ? 'LIVE' : `${live.regs.length} teams`} />
+                {startSwitch}
+              </section>
+            </>
+          )}
         </aside>
 
-        <main className="relative min-h-0 min-w-0 flex-1 overflow-y-auto @4xl:overflow-hidden">
-          {view === 'tee' && (
-            <TeeSheet bookings={ops.teeSheet} blocks={ops.teeBlocks} courseHours={s.courseHours} now={clock}
-              onBook={(b) => dispatch({ type: 'book', booking: b })} onCancel={(id) => dispatch({ type: 'unbook', id })}
-              onBlock={(k) => dispatch({ type: 'block', block: k })} onUnblock={(id) => dispatch({ type: 'unblock', id })} />
+        <main className="@container relative min-h-0 min-w-0 flex-1 overflow-y-auto @4xl:overflow-hidden">
+          {current === 'tee' && teeSheet}
+          {current === 'eod' && <EodReport orders={ops.orders} now={clock} courseName={SOMERBY.name} />}
+          {current === 'settings' && <OpsSettingsView settings={s} now={clock} onChange={(patch) => dispatch({ type: 'setting', patch })} />}
+          {current === 'tournament' && tournamentView}
+          {current === 'ops' && (
+            <div className="grid h-full min-h-0 grid-cols-1 gap-3 @5xl:grid-cols-2" data-testid="unified-ops">
+              <div className="@container min-h-0 overflow-y-auto" aria-label="Daily operations">{teeSheet}</div>
+              <div className="@container min-h-0 overflow-y-auto rounded-3xl border border-amber-300/20 p-1" aria-label="Tournament">{tournamentView}</div>
+            </div>
           )}
-          {view === 'settings' && <OpsSettingsView settings={s} now={clock} onChange={(patch) => dispatch({ type: 'setting', patch })} />}
-          {tournament && (s.tournamentLive && s.liveSince ? (
-            <LiveRadar holes={live.holes} placed={live.placed} alertMin={s.paceAlertMin} orders={ops.orders} now={live.now} liveSince={s.liveSince}
-              selected={selected} onSelect={select} onStatus={(id, st) => dispatch({ type: 'status', id, status: st })}
-              onFastForward={DEMO ? live.fastForward : undefined} />
-          ) : (
-            <EventCRM event={event} regs={live.regs}
-              onSave={(id, p) => dispatch({ type: 'roster', id, ...p })}
-              onMarkPaid={(id, amount) => dispatch({ type: 'pay', id, amount })} />
-          ))}
-          {s.tournamentLive && <PaceAlerts toasts={live.toasts} onDismiss={live.dismiss} onOpen={(g) => { setView('tournament'); setSelected(g); }} />}
+          {s.tournamentLive && <PaceAlerts toasts={live.toasts} onDismiss={live.dismiss} onOpen={(g) => { setView(s.inHouse ? 'ops' : 'tournament'); setSelected(g); }} />}
         </main>
       </div>
 
+      {help && <HelpCenter audience="staff" onClose={() => setHelp(false)} />}
       {queueOpen && (
         <div className="absolute inset-0 z-40 flex justify-end bg-black/40" onClick={() => setQueueOpen(false)}>
           <aside onClick={(e) => e.stopPropagation()} aria-label="Orders" className={`${glass} m-3 flex w-full max-w-md flex-col rounded-3xl bg-zinc-950/85 p-4`}>

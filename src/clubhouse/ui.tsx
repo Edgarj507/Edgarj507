@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { X } from 'lucide-react';
 
 export const glass = 'border border-white/10 bg-white/[0.06] backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.45)]';
@@ -9,14 +9,18 @@ export const ago = (t: number, now: number) => {
   return m < 1 ? 'just now' : m < 60 ? `${m}m ago` : `${Math.floor(m / 60)}h ${m % 60}m ago`;
 };
 
-export function Panel({ title, aside, children, className = '' }: { title: ReactNode; aside?: ReactNode; children: ReactNode; className?: string }) {
+export function Panel({ title, aside, children, className = '', style, label, scroll = 'hidden' }: {
+  title: ReactNode; aside?: ReactNode; children: ReactNode; className?: string; style?: CSSProperties; label?: string;
+  /** 'thin' shows a slim scrollbar (long operational lists); 'hidden' keeps it invisible. */
+  scroll?: 'hidden' | 'thin';
+}) {
   return (
-    <section className={`${glass} flex min-h-0 flex-col rounded-3xl p-3 ${className}`}>
+    <section aria-label={label} style={style} className={`${glass} flex min-h-0 flex-col rounded-3xl p-3 ${className}`}>
       <div className="mb-2 flex items-center justify-between gap-2 px-1">
         <h2 className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.2em] text-white/85">{title}</h2>
         {aside}
       </div>
-      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto">{children}</div>
+      <div className={`${scroll === 'thin' ? 'eg-scroll pr-1' : 'no-scrollbar'} min-h-0 flex-1 overflow-y-auto overscroll-contain`}>{children}</div>
     </section>
   );
 }

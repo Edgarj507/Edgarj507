@@ -64,13 +64,13 @@ describe('orders', () => {
     await expect(order(P, [{ sku: 'WATER', qty: 1 }])).rejects.toThrow(/ordering_off/);
     await expect(order(P, [], 'hail')).rejects.toThrow(/hail_cart_off/);
     // Charity mulligans are digital: still on sale, and nothing to deliver.
-    expect((await order(P, [{ sku: 'MULLIGAN', qty: 1 }])).rows[0]).toEqual({ total_cents: 1000, status: 'delivered' });
+    expect((await order(P, [{ sku: 'MULLIGAN', qty: 1 }])).rows[0]).toEqual({ total_cents: 1000, status: 'completed' });
     await as(db, 'authenticated', S, () => db.query(`update public.course_settings set live_ordering = true, hail_cart = true where course_name = $1`, [C]));
   });
-  it('players see only their own orders and cannot mark them delivered; staff see the queue', async () => {
+  it('players see only their own orders and cannot mark them completed; staff see the queue', async () => {
     const mine = await as(db, 'authenticated', Q, () => db.query(`select * from public.orders`));
     expect(mine.rows.length).toBeGreaterThan(0);
-    const upd = await as(db, 'authenticated', P, () => db.query(`update public.orders set status = 'delivered'`));
+    const upd = await as(db, 'authenticated', P, () => db.query(`update public.orders set status = 'completed'`));
     expect(upd.affectedRows).toBe(0);
     const q = await as(db, 'authenticated', S, () => db.query(`update public.orders set status = 'enroute' where player_id = $1`, [P]));
     expect(q.affectedRows).toBeGreaterThan(0);

@@ -6,6 +6,9 @@ import { useOps, newId } from '../ops/useOps';
 import { normalizePhone, smsGroupLink } from '../lib/sms';
 import { isEnrolled, verify } from '../lib/webauthn';
 import { TrackingNotice } from '../views/TrackingNotice';
+import { LegalConsent } from '../legal/LegalUI';
+import { accept } from '../legal/consent';
+import { BannerThumb, EventDetailsView } from './EventDetailsView';
 
 const input = 'w-full rounded-lg border bg-black/40 px-2.5 py-2 text-[12px] text-white placeholder-white/30 focus:outline-none disabled:opacity-50';
 const SEAT = (e: EventInfo) => e.foursomePrice / 4;
@@ -24,7 +27,9 @@ export function Tournaments({ captain, onBack }: { captain: Contact; onBack: () 
   const [ops, dispatch] = useOps('player');
   const [tab, setTab] = useState<'events' | 'mine'>('events');
   const [event, setEvent] = useState<EventInfo | null>(null);
-  const [step, setStep] = useState<'list' | 'roster' | 'pay' | 'done'>('list');
+  const [step, setStep] = useState<'list' | 'details' | 'roster' | 'pay' | 'done'>('list');
+  const [agreed, setAgreed] = useState(false);
+  const [agreeErr, setAgreeErr] = useState(false);
   const [team, setTeam] = useState('');
   const [cap, setCap] = useState<Contact>(captain);
   const [roster, setRoster] = useState<Contact[]>([blankContact(), blankContact(), blankContact()]);
@@ -43,6 +48,9 @@ export function Tournaments({ captain, onBack }: { captain: Contact; onBack: () 
 
   const pay = async (method: 'applepay' | 'card') => {
     if (!event) return;
+    // Ticket checkout requires the Liability Waiver (tournament participation, cart safety) and Terms.
+    if (!agreed) return setAgreeErr(true);
+    accept(['waiver', 'tos'], 'checkout', event.id);
     setPayErr(null);
     setPaying(true);
     const ok = await charge(method);
@@ -62,14 +70,14 @@ export function Tournaments({ captain, onBack }: { captain: Contact; onBack: () 
   const teammates = roster.filter((c) => !isOpenSlot(c)).map((c) => c.phone);
   const back = () => {
     if (tab === 'mine' || step === 'list') return onBack();
-    setStep(step === 'pay' ? 'roster' : 'list');
+    setStep(step === 'pay' ? 'roster' : step === 'roster' ? 'details' : 'list');
   };
 
   return (
     <div className="relative flex h-full w-full flex-col p-5">
       <div className="z-10 mb-4 flex items-center gap-3">
         <button onClick={back} aria-label="Back" className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-black/40 text-white/80 backdrop-blur-md"><ChevronLeft size={16} /></button>
-        <h2 className="text-xs font-bold uppercase tracking-widest text-white">{step === 'roster' ? 'Your Foursome' : step === 'pay' ? 'Checkout' : 'Tournaments'}</h2>
+        <h2 className="text-xs font-bold uppercase tracking-widest text-white">{step === 'roster' ? 'Your Foursome' : step === 'pay' ? 'Checkout' : step === 'details' ? 'Event' : 'Tournaments'}</h2>
       </div>
 
       {step === 'list' && (
@@ -82,7 +90,8 @@ export function Tournaments({ captain, onBack }: { captain: Contact; onBack: () 
 
       <div className="no-scrollbar z-10 flex-1 overflow-y-auto pb-28">
         {step === 'list' && tab === 'events' && EVENTS.map((e) => (
-          <button key={e.id} onClick={() => { setEvent(e); setStep('roster'); setTouched(false); }} className="mb-3 w-full rounded-3xl border border-white/10 bg-white/[0.06] p-4 text-left backdrop-blur-2xl active:scale-[0.99]">
+          <button key={e.id} onClick={() => { setEvent(e); setStep('details'); setTouched(false); }} className="mb-3 w-full rounded-3xl border border-white/10 bg-white/[0.06] p-4 text-left backdrop-blur-2xl active:scale-[0.99]">
+            <BannerThumb banner={ops.eventDetails[e.id]?.banner} interactive={false} />
             <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-amber-300"><Trophy size={12} /> Charity event</div>
             <div className="text-lg font-black tracking-tight text-white">{e.name}</div>
             <div className="mt-1 flex items-center gap-1.5 text-[11px] text-white/60"><CalendarDays size={12} /> {e.date}</div>
@@ -90,10 +99,14 @@ export function Tournaments({ captain, onBack }: { captain: Contact; onBack: () 
             <div className="mt-1 flex items-center gap-1.5 text-[11px] text-emerald-300/80"><HeartHandshake size={12} /> {e.cause}</div>
             <div className="mt-3 flex items-center justify-between">
               <span className="font-mono text-xl font-semibold text-emerald-400">${e.foursomePrice}<span className="text-[10px] text-white/40"> / foursome</span></span>
-              <span className="rounded-full bg-emerald-500 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-black">Buy ticket</span>
+              <span className="rounded-full bg-emerald-500 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-black">View & register</span>
             </div>
           </button>
         ))}
+
+        {step === 'details' && event && (
+          <EventDetailsView event={event} details={ops.eventDetails[event.id]} onRegister={() => setStep('roster')} />
+        )}
 
         {step === 'list' && tab === 'mine' && (
           mine.length ? mine.map((r) => <MyTeam key={r.id} reg={r} live={ops.settings.tournamentLive} onSave={(p) => dispatch({ type: 'roster', id: r.id, ...p, actor: r.captain.phone })} onPay={(amt) => dispatch({ type: 'pay', id: r.id, amount: amt })} />)
@@ -134,6 +147,8 @@ export function Tournaments({ captain, onBack }: { captain: Contact; onBack: () 
               {plan === 'seat' && <p className="mt-2 text-[10px] text-amber-200/80">Team balance ${event.foursomePrice - SEAT(event)} is due before the event.</p>}
               <div className="mt-3 flex justify-between border-t border-white/10 pt-2 font-mono text-sm"><span className="text-white/60">Due today</span><span className="font-bold text-emerald-400">${amount}.00</span></div>
             </div>
+            <TrackingNotice />
+            <LegalConsent docs={['waiver', 'tos']} checked={agreed} onChange={(v) => { setAgreed(v); setAgreeErr(false); }} error={agreeErr} />
             <button disabled={paying} onClick={() => pay('applepay')} className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-white text-[15px] font-semibold text-black active:scale-[0.98] disabled:opacity-60">
               {paying ? 'Processing…' : <><span className="text-lg"></span> Pay</>}
             </button>
@@ -142,7 +157,6 @@ export function Tournaments({ captain, onBack }: { captain: Contact; onBack: () 
             </button>
             {isEnrolled('player') && <p className="flex items-center justify-center gap-1 text-[10px] text-white/45"><ScanFace size={11} /> Confirm with Face ID</p>}
             {payErr && <p role="alert" className="text-center text-[11px] text-rose-300">{payErr}</p>}
-            <TrackingNotice />
             <p className="text-center text-[9px] text-amber-200/70">Demo checkout — no card is charged. Live payments run through Stripe (Apple Pay / cards).</p>
           </div>
         )}

@@ -3,6 +3,8 @@ import { Lock, Mail, Phone, ScanFace, Target, UserRound, WifiOff } from 'lucide-
 import { useAuth } from '../auth/AuthContext';
 import { biometricAvailable, enroll, isEnrolled, verify } from '../lib/webauthn';
 import { StaffPortal } from './StaffPortal';
+import { LegalConsent } from '../legal/LegalUI';
+import { accept, hasAccepted } from '../legal/consent';
 
 const field = 'w-full rounded-xl border border-white/10 bg-black/40 py-3 pl-9 pr-3 text-sm text-white placeholder-white/30 backdrop-blur-md focus:border-emerald-500/50 focus:outline-none';
 const REMEMBER = 'eg.player.remember.v1';
@@ -23,6 +25,16 @@ export function SignIn() {
   const [busy, setBusy] = useState(false);
   const [staff, setStaff] = useState(false);
   const [msg, setMsg] = useState<{ tone: 'err' | 'ok'; text: string } | null>(null);
+  // Registration needs the Terms/EULA, Privacy Policy and Liability Waiver (current versions).
+  const needsConsent = !(hasAccepted('tos') && hasAccepted('privacy') && hasAccepted('waiver'));
+  const [agreed, setAgreed] = useState(false);
+  const [agreeErr, setAgreeErr] = useState(false);
+  const consentOk = () => {
+    if (!needsConsent) return true;
+    if (!agreed) { setAgreeErr(true); return false; }
+    accept(['tos', 'privacy', 'waiver'], 'signup');
+    return true;
+  };
 
   useEffect(() => { void biometricAvailable().then(setBio); }, []);
   const remembered = (() => { try { return JSON.parse(localStorage.getItem(REMEMBER) ?? 'null') as { name: string; phone: string } | null; } catch { return null; } })();
@@ -35,6 +47,7 @@ export function SignIn() {
 
   const submitPhone = async (e: FormEvent) => {
     e.preventDefault();
+    if (!consentOk()) return;
     setBusy(true); setMsg(null);
     if (codeSent) {
       const err = await verifyPhoneCode(phone, code);
@@ -52,6 +65,7 @@ export function SignIn() {
 
   const submitEmail = async (e: FormEvent) => {
     e.preventDefault();
+    if (!consentOk()) return;
     setBusy(true); setMsg(null);
     const err = mode === 'in' ? await signIn(email, password) : await signUp(email, password, handle);
     setBusy(false);
@@ -94,6 +108,12 @@ export function SignIn() {
             </button>
           ))}
         </div>
+
+        {needsConsent && (
+          <div className="mb-3 flex flex-col gap-1">
+            <LegalConsent docs={['tos', 'privacy', 'waiver']} checked={agreed} onChange={(v) => { setAgreed(v); setAgreeErr(false); }} error={agreeErr} />
+          </div>
+        )}
 
         {tab === 'phone' ? (
           <form onSubmit={submitPhone} className="flex flex-col gap-2.5" noValidate>
@@ -142,8 +162,8 @@ export function SignIn() {
             {msg && <p role="alert" className={`px-1 text-[11px] ${msg.tone === 'err' ? 'text-rose-300' : 'text-emerald-400'}`}>{msg.text}</p>}
             <button disabled={busy} className="h-12 rounded-2xl bg-emerald-500 text-xs font-black uppercase tracking-[0.2em] text-black disabled:opacity-50">{mode === 'in' ? 'Sign In' : 'Create Account'}</button>
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => signInWithProvider('apple')} className="h-11 rounded-2xl bg-white text-xs font-bold text-black"> Apple</button>
-              <button type="button" onClick={() => signInWithProvider('google')} className="h-11 rounded-2xl border border-white/10 bg-white/10 text-xs font-bold text-white">Google</button>
+              <button type="button" onClick={() => { if (consentOk()) void signInWithProvider('apple'); }} className="h-11 rounded-2xl bg-white text-xs font-bold text-black"> Apple</button>
+              <button type="button" onClick={() => { if (consentOk()) void signInWithProvider('google'); }} className="h-11 rounded-2xl border border-white/10 bg-white/10 text-xs font-bold text-white">Google</button>
             </div>
           </form>
         ) : (
@@ -152,7 +172,7 @@ export function SignIn() {
           </p>
         )}
 
-        <button onClick={continueAsGuest} className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-black/40 text-[10px] font-bold uppercase tracking-widest text-white/60 active:scale-[0.98]">
+        <button onClick={() => { if (consentOk()) continueAsGuest(); }} className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-black/40 text-[10px] font-bold uppercase tracking-widest text-white/60 active:scale-[0.98]">
           <WifiOff size={13} /> Play offline as guest
         </button>
       </div>

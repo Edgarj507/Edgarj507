@@ -32,7 +32,7 @@ export function LiveRadar({ holes, placed, alertMin, orders, now, liveSince, sel
   const [mapFailed, setMapFailed] = useState(!PROVIDER);
   const onCourse = placed.filter((g) => g.at);
   const late = onCourse.filter((g) => g.behindMin > alertMin);
-  const active = orders.filter((o) => o.status !== 'delivered');
+  const active = orders.filter((o) => o.status !== 'completed');
 
   const dots: RadarDot[] = useMemo(() => [
     ...onCourse.map((g) => ({
@@ -45,7 +45,7 @@ export function LiveRadar({ holes, placed, alertMin, orders, now, liveSince, sel
   const elapsed = Math.max(0, Math.round((now - liveSince) / 60_000));
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 gap-3 @4xl:grid-cols-[1.5fr_1fr]" data-testid="live-radar">
+    <div className="grid h-full min-h-0 grid-cols-1 gap-3 @4xl:grid-cols-[1.5fr_1fr] @4xl:grid-rows-[minmax(0,1fr)]" data-testid="live-radar">
       <section aria-label="Pace of play radar" className="relative min-h-[420px] overflow-hidden rounded-3xl border border-white/10 bg-black">
         {mapFailed || !PROVIDER ? (
           <SvgRadar holes={holes} dots={dots} selected={selected} onSelect={onSelect} />
@@ -55,17 +55,20 @@ export function LiveRadar({ holes, placed, alertMin, orders, now, liveSince, sel
           </Suspense>
         )}
         <div className="pointer-events-none absolute inset-0 shadow-[inset_0_0_80px_rgba(0,0,0,0.75)]" />
-        <div className={`${glass} absolute left-3 top-3 flex items-center gap-5 rounded-2xl px-3 py-2`}>
-          <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-emerald-300"><Radar size={13} /> God-mode</span>
-          <Stat label="On course" value={onCourse.length} />
-          <Stat label={`>${alertMin}m behind`} value={late.length} tone={late.length ? 'red' : undefined} />
-          <Stat label="Elapsed" value={`${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`} />
+        {/* Top overlays wrap instead of overlapping when the radar is narrow (in-house split view). */}
+        <div className="pointer-events-none absolute inset-x-3 top-3 flex flex-wrap items-start justify-between gap-2">
+          <div className={`${glass} pointer-events-auto flex items-center gap-5 rounded-2xl px-3 py-2`}>
+            <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-emerald-300"><Radar size={13} /> God-mode</span>
+            <Stat label="On course" value={onCourse.length} />
+            <Stat label={`>${alertMin}m behind`} value={late.length} tone={late.length ? 'red' : undefined} />
+            <Stat label="Elapsed" value={`${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`} />
+          </div>
+          {onFastForward && (
+            <button onClick={onFastForward} className={`${glass} pointer-events-auto flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/70`} title="Positions are simulated in demo mode">
+              <FastForward size={12} /> Demo clock +15 min
+            </button>
+          )}
         </div>
-        {onFastForward && (
-          <button onClick={onFastForward} className={`${glass} absolute right-3 top-3 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/70`} title="Positions are simulated in demo mode">
-            <FastForward size={12} /> Demo clock +15 min
-          </button>
-        )}
         <div className={`${glass} absolute bottom-3 left-3 flex gap-3 rounded-xl px-3 py-1.5 text-[9px] font-bold uppercase tracking-widest text-white/60`}>
           <Legend c="bg-emerald-500" t="On pace" /><Legend c="bg-red-500" t="Behind" /><Legend c="bg-amber-400" t="Order" /><Legend c="bg-sky-400" t="Hail" />
         </div>
@@ -78,11 +81,16 @@ export function LiveRadar({ holes, placed, alertMin, orders, now, liveSince, sel
         )}
       </section>
 
-      <div className="grid min-h-0 grid-rows-[minmax(240px,1fr)_minmax(200px,0.8fr)] gap-3">
-        <Panel title={<><Truck size={13} /> Fulfillment Queue</>} aside={<span className="font-mono text-[10px] text-white/50">{active.length} open</span>}>
+      {/* Right column: the queue grows with its orders from 25% to 50% of the screen height;
+          the pace board takes whatever is left. Both scroll. */}
+      <div className="flex min-h-0 flex-col gap-3">
+        <Panel label="Fulfillment queue panel" title={<><Truck size={13} /> Fulfillment Queue</>} scroll="thin"
+          aside={<span className="font-mono text-[10px] text-white/50">{active.length} open</span>}
+          className="shrink-0 transition-[height] duration-500 ease-out"
+          style={{ height: `clamp(25vh, calc(64px + ${active.length} * 118px), 50vh)` }}>
           <Queue orders={orders} now={now} selected={selected} onSelect={onSelect} onStatus={onStatus} />
         </Panel>
-        <Panel title={<>Pace board</>} aside={<span className="text-[10px] text-white/45">slowest first</span>}>
+        <Panel label="Pace board panel" title={<>Pace board</>} scroll="thin" className="min-h-[160px] flex-1" aside={<span className="text-[10px] text-white/45">{onCourse.length} groups · slowest first</span>}>
           <ul className="flex flex-col gap-1">
             {[...onCourse].sort((a, b) => b.behindMin - a.behindMin).map((g) => (
               <li key={g.group.id}>

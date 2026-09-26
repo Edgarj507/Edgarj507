@@ -1,9 +1,15 @@
-import { ChevronLeft, ChevronRight, Flag, Globe, Ruler, Shield, Users } from 'lucide-react';
+import { useState } from 'react';
+import { BookOpen, ChevronLeft, ChevronRight, FileText, Flag, Globe, LifeBuoy, Ruler, Shield, Users } from 'lucide-react';
+import { LEGAL, type LegalDocId } from '../legal/documents';
+import { LegalModal } from '../legal/LegalUI';
+import { acceptedAt } from '../legal/consent';
 import { usePrefs, type Units } from '../i18n/prefs';
 import { LANGUAGES, type Lang } from '../i18n/strings';
 
-export function SettingsView({ onBack, onProfile, onCourses }: { onBack: () => void; onProfile: () => void; onCourses: () => void }) {
+export function SettingsView({ onBack, onProfile, onCourses, onHelp, onTutorial }: { onBack: () => void; onProfile: () => void; onCourses: () => void; onHelp: () => void; onTutorial: () => void }) {
   const { t, lang, units, communityPins, langDetected, set } = usePrefs();
+  const [doc, setDoc] = useState<LegalDocId | null>(null);
+  const row = 'flex items-center justify-between rounded-xl border border-white/10 bg-black/40 p-4 backdrop-blur-md transition-all hover:bg-white/5 active:scale-[0.98]';
   const seg = (active: boolean) =>
     `flex-1 rounded-lg py-2 text-[10px] font-bold uppercase tracking-widest transition-all ${active ? 'bg-emerald-500/20 text-emerald-400' : 'text-white/50'}`;
 
@@ -85,7 +91,33 @@ export function SettingsView({ onBack, onProfile, onCourses }: { onBack: () => v
             <ChevronRight size={16} className="text-white/30" />
           </button>
         </section>
+
+        <section className="flex flex-col gap-2" aria-label="Help">
+          <span className="pl-1 text-[10px] font-bold uppercase tracking-widest text-white/50">Help</span>
+          <button onClick={onHelp} className={row}>
+            <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-white"><LifeBuoy size={14} className="text-emerald-400" /> Help Center & FAQ</span>
+            <ChevronRight size={16} className="text-white/30" />
+          </button>
+          <button onClick={onTutorial} className={row}>
+            <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-white"><BookOpen size={14} className="text-emerald-400" /> Replay tutorial</span>
+            <ChevronRight size={16} className="text-white/30" />
+          </button>
+        </section>
+
+        <section className="flex flex-col gap-2" aria-label="Legal">
+          <span className="pl-1 text-[10px] font-bold uppercase tracking-widest text-white/50">Legal</span>
+          {(['tos', 'privacy', 'waiver'] as const).map((d) => {
+            const at = acceptedAt(d);
+            return (
+              <button key={d} onClick={() => setDoc(d)} className={row}>
+                <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-white"><FileText size={14} className="text-emerald-400" /> {LEGAL[d].title}</span>
+                <span className="text-[9px] text-white/40">{at ? `Accepted ${new Date(at).toLocaleDateString()}` : 'View'}</span>
+              </button>
+            );
+          })}
+        </section>
       </div>
+      {doc && <LegalModal doc={doc} onClose={() => setDoc(null)} />}
     </div>
   );
 }

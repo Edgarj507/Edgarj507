@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ChefHat, Flag, Gauge, HandCoins, Minus, Plus, ToggleRight } from 'lucide-react';
+import { ChefHat, Flag, Gauge, HandCoins, Merge, Minus, Plus, ToggleRight } from 'lucide-react';
 import { fmtTime, isOpenAt, type Hours, type OpsSettings } from '../../ops/model';
 import { field, glass, Toggle } from '../ui';
 
@@ -9,6 +9,11 @@ export function OpsSettingsView({ settings, onChange, now }: { settings: OpsSett
   const courseOpen = isOpenAt(settings.courseHours, now);
   return (
     <div className="no-scrollbar grid h-full min-h-0 auto-rows-min grid-cols-1 gap-3 overflow-y-auto @4xl:grid-cols-2" data-testid="ops-settings">
+      <Card icon={<Merge size={14} />} title="Tournament Mode">
+        <Toggle label="In-House Tournament" sub="For courses hosting their own event: merge the Tee Sheet with the Pre-Event CRM / Live Radar into one Operations view"
+          on={settings.inHouse} onChange={(v) => onChange({ inHouse: v })} />
+      </Card>
+
       <Card icon={<Gauge size={14} />} title="Pace of Play">
         <Stepper label="Target pace" unit="min / hole" value={settings.paceMinPerHole} step={0.5} onChange={(v) => onChange({ paceMinPerHole: v })}
           sub={`${Math.floor((settings.paceMinPerHole * 18) / 60)}h ${Math.round((settings.paceMinPerHole * 18) % 60)}m for 18 holes`} />
