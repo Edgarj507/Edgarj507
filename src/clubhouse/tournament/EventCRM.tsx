@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { BadgeDollarSign, Banknote, ChevronRight, Mail, MessageSquareText, Pencil, Search, ShieldCheck, Trophy, UserMinus, Users } from 'lucide-react';
-import { balance, blankContact, filledCount, isOpenSlot, validateTeam, type Contact, type Registration } from '../ops/model';
-import { smsGroupLink } from '../lib/sms';
-import type { EventInfo } from '../tournaments/events';
-import { field, glass, Panel, Stat } from './ui';
+import { balance, blankContact, filledCount, isOpenSlot, validateTeam, type Contact, type Registration } from '../../ops/model';
+import { smsGroupLink } from '../../lib/sms';
+import type { EventInfo } from '../../tournaments/events';
+import { field, glass, Panel, Stat } from '../ui';
 
 type Filter = 'all' | 'balance' | 'open';
 export interface RosterPatch { teamName: string; captain: Contact; roster: Registration['roster'] }

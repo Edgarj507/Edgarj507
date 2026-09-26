@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { LngLatBounds, Map as MapLibre, Marker } from '../map/maplibre';
+import { LngLatBounds, Map as MapLibre, Marker } from '../../map/maplibre';
 import type { FeatureCollection } from 'geojson';
-import type { ImageryProvider } from '../map/providers';
+import type { ImageryProvider } from '../../map/providers';
 
 type LL = [number, number];
 

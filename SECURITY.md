@@ -127,6 +127,16 @@ Migration: `supabase/migrations/20260925010000_pin_tracking.sql`. Tests: `supaba
 
 **Tee sheet:** `tee_times` is staff-only (RLS `tee_staff`) and allows one booking per course and start time. A reservation needs a party of 1–4 and a valid phone number.
 
+**Tee-sheet blocks** (`20260929000000_tee_blocks.sql`, staff-only RLS `tee_blocks_staff`):
+- **Reasons:** each block has one reason from a fixed list: Maintenance, Private Event, Tournament, Season Closed, Irrigation repair, Weather, League, Other.
+- **Scope:** a block covers one tee time, a time window, or whole days across a date range of up to a year.
+- **Enforcement:** the `check_tee_block` trigger refuses reservations inside a block, using the course's local time.
+
+**Code layout:** the Clubhouse OS keeps two areas apart:
+- `src/clubhouse/everyday/`: Tee Sheet and Settings.
+- `src/clubhouse/tournament/`: CRM, Live Radar, pace alerts and the Start switch.
+- Tournament state (positions, pace, alerts) is computed only in `tournament/useLiveEvent.ts`, and only while the event is live.
+
 **Demo-mode caveats:**
 - Group pace on the radar is simulated. A real on-property fix replaces the simulated dot.
 - The server-side geofence is a buffered bounding box; the exact hull-plus-buffer test runs on the phone.

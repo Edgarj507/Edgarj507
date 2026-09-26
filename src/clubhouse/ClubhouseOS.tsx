@@ -1,21 +1,23 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CalendarClock, ChefHat, Lock, Radar, Settings2, ShieldCheck, Trophy, Truck, X } from 'lucide-react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { CalendarClock, ChefHat, ChevronRight, Lock, MapPinOff, Radar, Settings2, ShieldCheck, Trophy, Truck, X, type LucideIcon } from 'lucide-react';
 import { SOMERBY } from '../data/course';
 import { useOps } from '../ops/useOps';
-import { eventGroups, placeGroups } from '../ops/pace';
-import { isOpenAt, POSITION_TTL_MS } from '../ops/model';
-import { normalizePhone } from '../lib/sms';
+import { isOpenAt } from '../ops/model';
 import { EVENTS } from '../tournaments/events';
 import { useRole } from '../auth/RoleContext';
-import { EventCRM } from './EventCRM';
-import { LiveRadar } from './LiveRadar';
-import { TeeSheet } from './TeeSheet';
-import { OpsSettingsView } from './OpsSettingsView';
+// Everyday clubhouse operations
+import { TeeSheet } from './everyday/TeeSheet';
+import { OpsSettingsView } from './everyday/OpsSettingsView';
+// Tournament operations
+import { EventCRM } from './tournament/EventCRM';
+import { LiveRadar } from './tournament/LiveRadar';
+import { useLiveEvent } from './tournament/useLiveEvent';
+import { PaceAlerts, StartTournamentSwitch } from './tournament/TournamentControls';
+// Shared
 import { Queue } from './Queue';
-import { glass, hhmm, Modal } from './ui';
+import { glass, hhmm } from './ui';
 
-type View = 'event' | 'tee' | 'settings';
-interface Toast { id: string; group: string; text: string }
+type View = 'tee' | 'settings' | 'tournament';
 
 const DEMO = !import.meta.env.VITE_SUPABASE_URL;
 
@@ -23,83 +25,33 @@ const DEMO = !import.meta.env.VITE_SUPABASE_URL;
  * Clubhouse OS — staff tablet (landscape). Reachable only with a staff session (PIN / Face ID);
  * in cloud mode every read and write is also gated by RLS (is_staff()).
  *
- * Two event phases: the Pre-Tournament CRM (no map, no locations) and, once staff flip
- * "Start Tournament", the Live Event Radar. The radar and pace alerts exist only while live.
+ * Two separate areas:
+ *   • Clubhouse (everyday): Tee Sheet and Settings — the daily running of the course.
+ *   • Tournament: the Pre-Event CRM, which becomes the Live Event Radar once staff flip
+ *     "Start Tournament". No map or locations exist before that switch.
  */
 export function ClubhouseOS() {
   const { lockStaff, staffName } = useRole();
   const [ops, dispatch] = useOps('staff');
   const s = ops.settings;
   const event = EVENTS[0];
-  const [view, setView] = useState<View>('event');
+  const [view, setView] = useState<View>(() => (s.tournamentLive ? 'tournament' : 'tee'));
   const [clock, setClock] = useState(() => Date.now());
-  const [simOffset, setSimOffset] = useState(0); // demo: fast-forward simulated positions
   const [selected, setSelected] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<'start' | 'end' | null>(null);
   const [queueOpen, setQueueOpen] = useState(false);
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const alerted = useRef(new Set<string>());
 
   useEffect(() => { const id = setInterval(() => setClock(Date.now()), 5_000); return () => clearInterval(id); }, []);
-  const now = clock + simOffset;
-
-  const regs = ops.registrations.filter((r) => r.eventId === event.id);
-  const holes = SOMERBY.data.holes;
-
-  // ── Live phase only: pace + positions. Nothing is computed or shown before the start. ──
-  const placed = useMemo(() => {
-    if (!s.tournamentLive || !s.liveSince) return [];
-    const groups = eventGroups(regs, s.liveSince, s.paceMinPerHole);
-    const fresh = ops.positions.filter((p) => clock - p.at < POSITION_TTL_MS);
-    return placeGroups(groups, holes.map((h) => h.path), now, s.paceMinPerHole).map((g) => {
-      // A real on-property GPS fix from anyone in the group replaces the simulated dot.
-      const reg = regs.find((r) => r.id === g.group.id);
-      const phones = reg ? [reg.captain, ...reg.roster].map((c) => normalizePhone(c.phone)).filter(Boolean) : [];
-      const fix = fresh.find((p) => phones.includes(p.phone));
-      return fix ? { ...g, at: [fix.lat, fix.lng] as [number, number], gps: true } : { ...g, gps: false };
-    });
-  }, [s.tournamentLive, s.liveSince, s.paceMinPerHole, regs, ops.positions, holes, now, clock]);
-
-  // Global pace alerts: one toast when a group crosses the staff-defined limit.
-  useEffect(() => {
-    if (!s.tournamentLive) { alerted.current.clear(); setToasts([]); return; }
-    const fresh: Toast[] = [];
-    for (const g of placed) {
-      const late = g.started && !g.finished && g.behindMin > s.paceAlertMin;
-      if (late && !alerted.current.has(g.group.id)) {
-        alerted.current.add(g.group.id);
-        fresh.push({ id: `${g.group.id}-${now}`, group: g.group.id, text: `${g.group.name} is +${g.behindMin} mins behind pace on Hole ${g.hole}` });
-      } else if (!late) alerted.current.delete(g.group.id);
-    }
-    if (fresh.length) setToasts((t) => [...fresh, ...t].slice(0, 5));
-  }, [placed, s.tournamentLive, s.paceAlertMin, now]);
-  useEffect(() => {
-    if (!toasts.length) return;
-    const id = setTimeout(() => setToasts((t) => t.slice(0, -1)), 12_000);
-    return () => clearTimeout(id);
-  }, [toasts]);
-
-  const setLive = (live: boolean) => {
-    dispatch({ type: 'setting', patch: { tournamentLive: live } });
-    setSimOffset(0);
-    setConfirm(null);
-    setView('event');
-  };
+  const live = useLiveEvent(ops, event.id, clock);
   const select = useCallback((id: string) => setSelected((x) => (x === id ? null : id)), []);
   const openOrders = ops.orders.filter((o) => o.status !== 'delivered').length;
   const kitchenOpen = isOpenAt(s.kitchenHours, clock);
-
-  const nav: [View, string, typeof Radar][] = [
-    ['event', s.tournamentLive ? 'Live Radar' : 'Pre-Tournament CRM', s.tournamentLive ? Radar : Trophy],
-    ['tee', 'Tee Sheet', CalendarClock],
-    ['settings', 'Settings', Settings2],
-  ];
+  const tournament = view === 'tournament';
 
   return (
     <div className="@container relative flex h-full w-full flex-col overflow-hidden bg-zinc-950 text-white" data-testid="clubhouse-os">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(16,185,129,0.10),transparent_55%)]" />
+      <div className={`pointer-events-none absolute inset-0 transition-colors ${tournament ? 'bg-[radial-gradient(ellipse_at_top_left,rgba(245,158,11,0.10),transparent_55%)]' : 'bg-[radial-gradient(ellipse_at_top_left,rgba(16,185,129,0.10),transparent_55%)]'}`} />
 
-      {/* ── Floating glass header ── */}
+      {/* ── Floating glass header (shared) ── */}
       <header className={`${glass} relative z-30 m-3 mb-0 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl px-4 py-2.5`}>
         <div className="flex items-center gap-2.5">
           <span className="grid h-8 w-8 place-items-center rounded-xl bg-emerald-500/15 ring-1 ring-emerald-400/40"><ShieldCheck size={16} className="text-emerald-400" /></span>
@@ -108,13 +60,7 @@ export function ClubhouseOS() {
             <div className="text-[10px] text-white/50">{SOMERBY.name} · {hhmm(clock)}</div>
           </div>
         </div>
-        <nav role="tablist" aria-label="Clubhouse views" className="flex gap-1 rounded-xl border border-white/10 bg-black/40 p-1">
-          {nav.map(([id, label, Icon]) => (
-            <button key={id} role="tab" aria-selected={view === id} onClick={() => setView(id)} className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest ${view === id ? 'bg-emerald-500/20 text-emerald-300' : 'text-white/55 hover:text-white/80'}`}>
-              <Icon size={12} />{label}
-            </button>
-          ))}
-        </nav>
+        <Breadcrumb tournament={tournament} items={tournament ? ['Tournament', event.name, s.tournamentLive ? 'Live Radar' : 'Pre-Event CRM'] : ['Clubhouse', view === 'tee' ? 'Tee Sheet' : 'Settings']} />
         <div className="ml-auto flex flex-wrap items-center gap-3">
           <span role="status" className={`flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-widest ${kitchenOpen ? 'bg-emerald-500/10 text-emerald-300' : 'bg-red-500/10 text-red-300'}`}>
             <ChefHat size={11} /> Kitchen {kitchenOpen ? 'open' : 'closed'}
@@ -123,47 +69,52 @@ export function ClubhouseOS() {
             <Truck size={12} /> Orders
             {openOrders > 0 && <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-400 px-1 text-[9px] font-black text-black">{openOrders}</span>}
           </button>
-          <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/40 py-1 pl-3 pr-1">
-            <span className={`text-[10px] font-black uppercase tracking-widest ${s.tournamentLive ? 'text-red-300' : 'text-white/70'}`}>
-              {s.tournamentLive ? <span className="flex items-center gap-1.5"><span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />Live</span> : 'Start Tournament'}
-            </span>
-            <button role="switch" aria-checked={s.tournamentLive} aria-label="Start Tournament" onClick={() => setConfirm(s.tournamentLive ? 'end' : 'start')}
-              className={`relative h-6 w-11 rounded-full transition-colors ${s.tournamentLive ? 'bg-red-500 shadow-[0_0_14px_rgba(239,68,68,0.55)]' : 'bg-white/15'}`}>
-              <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${s.tournamentLive ? 'translate-x-5' : ''}`} />
-            </button>
-          </div>
           <button onClick={lockStaff} className="flex h-8 items-center gap-1.5 rounded-full border border-white/15 bg-black/40 px-3 text-[10px] font-bold uppercase tracking-widest text-white/80 active:scale-95">
             <Lock size={12} /> Lock{staffName ? ` · ${staffName}` : ''}
           </button>
         </div>
       </header>
 
-      <main className="relative z-10 min-h-0 flex-1 overflow-y-auto p-3 @4xl:overflow-hidden">
-        {view === 'event' && (s.tournamentLive && s.liveSince ? (
-          <LiveRadar holes={holes} placed={placed} alertMin={s.paceAlertMin} orders={ops.orders} now={now} liveSince={s.liveSince}
-            selected={selected} onSelect={select} onStatus={(id, st) => dispatch({ type: 'status', id, status: st })}
-            onFastForward={DEMO ? () => setSimOffset((o) => o + 15 * 60_000) : undefined} />
-        ) : (
-          <EventCRM event={event} regs={regs}
-            onSave={(id, p) => dispatch({ type: 'roster', id, ...p })}
-            onMarkPaid={(id, amount) => dispatch({ type: 'pay', id, amount })} />
-        ))}
-        {view === 'tee' && (
-          <TeeSheet bookings={ops.teeSheet} courseHours={s.courseHours} now={clock}
-            onBook={(b) => dispatch({ type: 'book', booking: b })} onCancel={(id) => dispatch({ type: 'unbook', id })} />
-        )}
-        {view === 'settings' && <OpsSettingsView settings={s} now={clock} onChange={(patch) => dispatch({ type: 'setting', patch })} />}
-      </main>
+      <div className="relative z-10 flex min-h-0 flex-1 gap-3 p-3">
+        {/* ── Left rail: two clearly separated areas ── */}
+        <aside className="flex w-52 shrink-0 flex-col gap-3" aria-label="Clubhouse OS navigation">
+          <section aria-label="Clubhouse operations" className={`${glass} rounded-2xl p-2`}>
+            <SectionLabel dot="bg-emerald-400" title="Clubhouse" sub="Everyday operations" />
+            <NavItem icon={CalendarClock} label="Tee Sheet" active={view === 'tee'} onClick={() => setView('tee')} tone="emerald" />
+            <NavItem icon={Settings2} label="Settings" active={view === 'settings'} onClick={() => setView('settings')} tone="emerald" />
+          </section>
 
-      {/* ── Global pace alerts ── */}
-      <div className="pointer-events-none absolute left-6 top-[10.5rem] z-40 flex w-[360px] max-w-[calc(100%-3rem)] flex-col gap-2" aria-live="assertive">
-        {toasts.map((t) => (
-          <div key={t.id} role="alert" className="pointer-events-auto flex items-start gap-2.5 rounded-2xl border border-red-400/40 bg-red-950/70 p-3 shadow-[0_0_30px_rgba(239,68,68,0.35)] backdrop-blur-2xl">
-            <AlertTriangle size={16} className="mt-0.5 shrink-0 text-red-400" />
-            <button onClick={() => { setView('event'); setSelected(t.group); }} className="flex-1 text-left text-[12px] font-semibold leading-snug text-red-50">{t.text}</button>
-            <button onClick={() => setToasts((x) => x.filter((y) => y.id !== t.id))} aria-label="Dismiss alert" className="text-red-200/60"><X size={14} /></button>
-          </div>
-        ))}
+          <section aria-label="Tournament operations" className="rounded-2xl border border-amber-300/25 bg-amber-300/[0.05] p-2 backdrop-blur-2xl">
+            <SectionLabel dot={s.tournamentLive ? 'bg-red-500 animate-pulse' : 'bg-amber-300'} title="Tournament" sub={event.name} />
+            <NavItem icon={s.tournamentLive ? Radar : Trophy} label={s.tournamentLive ? 'Live Radar' : 'Pre-Event CRM'} active={tournament} onClick={() => setView('tournament')} tone="amber"
+              badge={s.tournamentLive ? 'LIVE' : `${live.regs.length} teams`} />
+            <div className="mt-2 rounded-xl border border-white/10 bg-black/30 p-2.5">
+              <StartTournamentSwitch live={s.tournamentLive} onChange={(v) => { dispatch({ type: 'setting', patch: { tournamentLive: v } }); setView('tournament'); }} />
+              <p className="mt-1.5 flex items-start gap-1 text-[9px] leading-snug text-white/45">
+                {s.tournamentLive ? <>Tracking on the property only (+250 ft)</> : <><MapPinOff size={10} className="mt-px shrink-0" /> No map or locations before the start</>}
+              </p>
+            </div>
+          </section>
+        </aside>
+
+        <main className="relative min-h-0 min-w-0 flex-1 overflow-y-auto @4xl:overflow-hidden">
+          {view === 'tee' && (
+            <TeeSheet bookings={ops.teeSheet} blocks={ops.teeBlocks} courseHours={s.courseHours} now={clock}
+              onBook={(b) => dispatch({ type: 'book', booking: b })} onCancel={(id) => dispatch({ type: 'unbook', id })}
+              onBlock={(k) => dispatch({ type: 'block', block: k })} onUnblock={(id) => dispatch({ type: 'unblock', id })} />
+          )}
+          {view === 'settings' && <OpsSettingsView settings={s} now={clock} onChange={(patch) => dispatch({ type: 'setting', patch })} />}
+          {tournament && (s.tournamentLive && s.liveSince ? (
+            <LiveRadar holes={live.holes} placed={live.placed} alertMin={s.paceAlertMin} orders={ops.orders} now={live.now} liveSince={s.liveSince}
+              selected={selected} onSelect={select} onStatus={(id, st) => dispatch({ type: 'status', id, status: st })}
+              onFastForward={DEMO ? live.fastForward : undefined} />
+          ) : (
+            <EventCRM event={event} regs={live.regs}
+              onSave={(id, p) => dispatch({ type: 'roster', id, ...p })}
+              onMarkPaid={(id, amount) => dispatch({ type: 'pay', id, amount })} />
+          ))}
+          {s.tournamentLive && <PaceAlerts toasts={live.toasts} onDismiss={live.dismiss} onOpen={(g) => { setView('tournament'); setSelected(g); }} />}
+        </main>
       </div>
 
       {queueOpen && (
@@ -177,26 +128,36 @@ export function ClubhouseOS() {
           </aside>
         </div>
       )}
-
-      {confirm && (
-        <Modal title={confirm === 'start' ? 'Start the tournament?' : 'End the tournament?'} onClose={() => setConfirm(null)}>
-          {confirm === 'start' ? (
-            <ul className="mb-5 flex flex-col gap-2 text-[12px] leading-snug text-white/75">
-              <li>• The Pre-Tournament CRM switches to the <b className="text-white">Live Event Radar</b>.</li>
-              <li>• Registered players’ phones start sharing location, <b className="text-white">only while on the property</b> (course boundary + 250 ft). Off-property phones send nothing.</li>
-              <li>• Captains can no longer edit rosters.</li>
-            </ul>
-          ) : (
-            <p className="mb-5 text-[12px] leading-snug text-white/75">Location sharing stops on every phone and all stored positions are deleted. The CRM comes back.</p>
-          )}
-          <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => setConfirm(null)} className="h-11 rounded-2xl border border-white/10 text-[10px] font-bold uppercase tracking-widest text-white/70">Cancel</button>
-            <button onClick={() => setLive(confirm === 'start')} className={`h-11 rounded-2xl text-[10px] font-black uppercase tracking-widest ${confirm === 'start' ? 'bg-red-500 text-white' : 'bg-white text-black'}`}>
-              {confirm === 'start' ? 'Go live' : 'End tournament'}
-            </button>
-          </div>
-        </Modal>
-      )}
     </div>
+  );
+}
+
+function SectionLabel({ dot, title, sub }: { dot: string; title: string; sub: string }) {
+  return (
+    <div className="mb-1.5 px-2 pt-1">
+      <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-white/85"><span className={`h-1.5 w-1.5 rounded-full ${dot}`} />{title}</div>
+      <div className="truncate text-[9px] text-white/40">{sub}</div>
+    </div>
+  );
+}
+
+function NavItem({ icon: Icon, label, active, onClick, tone, badge }: { icon: LucideIcon; label: string; active: boolean; onClick: () => void; tone: 'emerald' | 'amber'; badge?: string }) {
+  const on = tone === 'emerald' ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-400/30' : 'bg-amber-300/15 text-amber-100 ring-1 ring-amber-300/30';
+  return (
+    <button onClick={onClick} aria-current={active ? 'page' : undefined}
+      className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-[11px] font-bold uppercase tracking-wider ${active ? on : 'text-white/60 hover:bg-white/5'}`}>
+      <Icon size={14} /><span className="flex-1">{label}</span>
+      {badge && <span className={`rounded-full px-1.5 py-0.5 text-[8px] font-black ${badge === 'LIVE' ? 'bg-red-500 text-white' : 'bg-white/10 text-white/60'}`}>{badge}</span>}
+    </button>
+  );
+}
+
+function Breadcrumb({ tournament, items }: { tournament: boolean; items: ReactNode[] }) {
+  return (
+    <nav aria-label="Location" className={`flex items-center gap-1 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-widest ${tournament ? 'bg-amber-300/10 text-amber-100' : 'bg-emerald-500/10 text-emerald-200'}`}>
+      {items.map((it, i) => (
+        <span key={i} className="flex items-center gap-1">{i > 0 && <ChevronRight size={10} className="opacity-50" />}<span className={i === items.length - 1 ? '' : 'opacity-60'}>{it}</span></span>
+      ))}
+    </nav>
   );
 }

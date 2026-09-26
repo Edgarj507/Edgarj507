@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { ChefHat, Flag, Gauge, HandCoins, Minus, Plus, ToggleRight } from 'lucide-react';
-import { fmtTime, isOpenAt, type Hours, type OpsSettings } from '../ops/model';
-import { field, glass, Toggle } from './ui';
+import { fmtTime, isOpenAt, type Hours, type OpsSettings } from '../../ops/model';
+import { field, glass, Toggle } from '../ui';
 
 /** Staff-only operational controls. Every change syncs to player phones immediately. */
 export function OpsSettingsView({ settings, onChange, now }: { settings: OpsSettings; onChange: (p: Partial<OpsSettings>) => void; now: number }) {

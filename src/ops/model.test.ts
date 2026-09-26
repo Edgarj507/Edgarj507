@@ -1,4 +1,4 @@
-import { balance, blankContact, filledCount, groupStatus, initialOps, isOpenAt, opsReducer, validateTeam, STANDARD_MIN_PER_HOLE, type Order, type Registration, type TeeBooking } from './model';
+import { balance, blankContact, blockFor, blockLabel, dayBlock, filledCount, groupStatus, initialOps, isOpenAt, opsReducer, validateBlock, validateTeam, STANDARD_MIN_PER_HOLE, type Order, type Registration, type TeeBlock, type TeeBooking } from './model';
 
 const order = (over: Partial<Order> = {}): Order => ({ id: 'o1', kind: 'order', createdAt: 1, player: 'Edgar', hole: 4, lat: 44, lng: -92, items: [], total: 9, status: 'new', ...over });
 
@@ -117,15 +117,35 @@ describe('hours of operation', () => {
 
 describe('tee sheet', () => {
   const b = (over: Partial<TeeBooking> = {}): TeeBooking => ({ id: 'b1', date: '2026-10-17', time: '09:10', status: 'reserved', name: 'Walk-up Jones', size: 3, phone: '507-555-0142', email: '', source: 'phone', ...over });
-  it('staff book phone reservations and blocks; one per slot; players cannot', () => {
+  const k = (over: Partial<TeeBlock> = {}): TeeBlock => ({ id: 'k1', reason: 'Maintenance', startDate: '2026-10-17', endDate: '2026-10-17', from: '09:20', to: '09:40', ...over });
+  it('staff book phone reservations; one per slot; players cannot', () => {
     expect(opsReducer(initialOps(), { type: 'book', booking: b() }, 'player').teeSheet).toHaveLength(0);
-    let s = opsReducer(initialOps(), { type: 'book', booking: b() }, 'staff');
+    const s = opsReducer(initialOps(), { type: 'book', booking: b() }, 'staff');
     expect(s.teeSheet[0]).toMatchObject({ phone: '+15075550142', size: 3 });
     expect(opsReducer(s, { type: 'book', booking: b({ id: 'b2' }) }, 'staff')).toBe(s);
-    s = opsReducer(s, { type: 'book', booking: b({ id: 'b3', time: '09:20', status: 'blocked', name: 'Aerification', phone: '', size: 0 }) }, 'staff');
-    expect(s.teeSheet).toHaveLength(2);
     expect(opsReducer(s, { type: 'book', booking: b({ id: 'b4', time: '09:30', phone: '12' }) }, 'staff')).toBe(s);
-    expect(opsReducer(s, { type: 'unbook', id: 'b1' }, 'staff').teeSheet).toHaveLength(1);
+    expect(opsReducer(s, { type: 'unbook', id: 'b1' }, 'staff').teeSheet).toHaveLength(0);
+  });
+  it('blocks a time window with a reason; blocked slots cannot be booked', () => {
+    expect(opsReducer(initialOps(), { type: 'block', block: k() }, 'player').teeBlocks).toHaveLength(0);
+    const s = opsReducer(initialOps(), { type: 'block', block: k() }, 'staff');
+    expect(blockFor(s.teeBlocks, '2026-10-17', '09:20')?.reason).toBe('Maintenance');
+    expect(blockFor(s.teeBlocks, '2026-10-17', '09:40')).toBeUndefined(); // end exclusive
+    expect(opsReducer(s, { type: 'book', booking: b({ time: '09:30' }) }, 'staff')).toBe(s);
+    expect(opsReducer(s, { type: 'book', booking: b({ time: '09:40' }) }, 'staff').teeSheet).toHaveLength(1);
+    expect(opsReducer(s, { type: 'unblock', id: 'k1' }, 'staff').teeBlocks).toHaveLength(0);
+  });
+  it('blocks whole days across a date range', () => {
+    const s = opsReducer(initialOps(), { type: 'block', block: k({ reason: 'Season Closed', startDate: '2026-11-16', endDate: '2027-03-31', from: undefined, to: undefined }) }, 'staff');
+    expect(dayBlock(s.teeBlocks, '2027-01-05')?.reason).toBe('Season Closed');
+    expect(dayBlock(s.teeBlocks, '2027-04-01')).toBeUndefined();
+    expect(blockFor(s.teeBlocks, '2026-12-01', '07:00')).toBeDefined();
+    expect(blockLabel(s.teeBlocks[0])).toMatch(/all day$/);
+  });
+  it('rejects bad blocks', () => {
+    for (const bad of [k({ reason: 'Because' as TeeBlock['reason'] }), k({ endDate: '2026-10-16' }), k({ to: '09:00' }), k({ to: undefined }), k({ endDate: '2027-12-31' })]) {
+      expect(validateBlock(bad).ok).toBe(false);
+    }
   });
 });
 

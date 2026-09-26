@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { DEFAULT_SETTINGS, initialOps, localDate, opsReducer, type OpsAction, type OpsState, type Registration, type Role } from './model';
+import { DEFAULT_SETTINGS, fromMin, initialOps, localDate, opsReducer, toMin, type OpsAction, type OpsState, type Registration, type Role, type TeeBlock } from './model';
 import { demoTeeSheet, withDemoData } from './demoSeed';
 import { EVENTS } from '../tournaments/events';
 
@@ -13,6 +13,10 @@ const chan = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('eg-
 
 const DEMO = !import.meta.env.VITE_SUPABASE_URL;
 
+const legacyBlock = (b: { id: string; date: string; time: string; name: string }): TeeBlock => ({
+  id: b.id, reason: 'Other', note: b.name, startDate: b.date, endDate: b.date, from: b.time, to: fromMin(toMin(b.time) + 10),
+});
+
 /** Load (and upgrade) the stored state; older saves get new settings defaults and fields. */
 function read(): OpsState {
   let s: OpsState | null = null;
@@ -23,7 +27,12 @@ function read(): OpsState {
         ...raw,
         settings: { ...DEFAULT_SETTINGS, ...raw.settings },
         registrations: raw.registrations.map((r: Registration) => ({ ...r, paid: r.paid ?? r.total })),
-        teeSheet: Array.isArray(raw.teeSheet) ? raw.teeSheet : [],
+        // Older saves stored blocks as 'blocked' bookings; turn each into a one-slot block.
+        teeSheet: (Array.isArray(raw.teeSheet) ? raw.teeSheet : []).filter((b: { status: string }) => b.status === 'reserved'),
+        teeBlocks: [
+          ...(Array.isArray(raw.teeBlocks) ? raw.teeBlocks : []),
+          ...(Array.isArray(raw.teeSheet) ? raw.teeSheet : []).filter((b: { status: string }) => b.status === 'blocked').map(legacyBlock),
+        ],
         positions: Array.isArray(raw.positions) ? raw.positions : [],
       };
     }

@@ -1,11 +1,11 @@
 import { lazy, Suspense, useMemo, useState } from 'react';
 import { FastForward, Radar, Truck } from 'lucide-react';
-import { imageryProvider } from '../map/providers';
-import type { Order } from '../ops/model';
-import type { placeGroups } from '../ops/pace';
+import { imageryProvider } from '../../map/providers';
+import type { Order } from '../../ops/model';
+import type { placeGroups } from '../../ops/pace';
 import type { RadarDot } from './RadarMap';
-import { Queue } from './Queue';
-import { glass, hhmm, Panel, Stat } from './ui';
+import { Queue } from '../Queue';
+import { glass, hhmm, Panel, Stat } from '../ui';
 
 const RadarMap = lazy(() => import('./RadarMap'));
 const PROVIDER = imageryProvider();

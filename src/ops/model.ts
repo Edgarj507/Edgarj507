@@ -63,7 +63,7 @@ export interface TeeBooking {
   /** Local date "YYYY-MM-DD" and time "HH:MM". */
   date: string;
   time: string;
-  status: 'reserved' | 'blocked';
+  status: 'reserved';
   name: string;
   size: number;
   phone: string;
@@ -72,10 +72,19 @@ export interface TeeBooking {
   note?: string;
 }
 
+export const BLOCK_REASONS = ['Maintenance', 'Private Event', 'Tournament', 'Season Closed', 'Irrigation repair', 'Weather', 'League', 'Other'] as const;
+export type BlockReason = (typeof BLOCK_REASONS)[number];
+
+/**
+ * A tee-sheet block: one slot, a window of times, or whole days across a date range.
+ * `from`/`to` ("HH:MM", end exclusive) omitted = all day.
+ */
+export interface TeeBlock { id: string; reason: BlockReason; note?: string; startDate: string; endDate: string; from?: string; to?: string }
+
 /** A player's last on-property GPS fix during a live event. Never stored off-property. */
 export interface LivePosition { player: string; phone: string; lat: number; lng: number; at: number }
 
-export interface OpsState { v: 1; settings: OpsSettings; orders: Order[]; registrations: Registration[]; teeSheet: TeeBooking[]; positions: LivePosition[] }
+export interface OpsState { v: 1; settings: OpsSettings; orders: Order[]; registrations: Registration[]; teeSheet: TeeBooking[]; teeBlocks: TeeBlock[]; positions: LivePosition[] }
 
 /** Somerby property line (hole hull); positions outside it + 250 ft are refused. */
 export const COURSE_BOUNDARY = courseBoundary(SOMERBY_DATA.holes);
@@ -89,7 +98,7 @@ export const DEFAULT_SETTINGS: OpsSettings = {
   tournamentLive: false, liveSince: null,
 };
 
-export const initialOps = (): OpsState => ({ v: 1, settings: { ...DEFAULT_SETTINGS }, orders: [], registrations: [], teeSheet: [], positions: [] });
+export const initialOps = (): OpsState => ({ v: 1, settings: { ...DEFAULT_SETTINGS }, orders: [], registrations: [], teeSheet: [], teeBlocks: [], positions: [] });
 
 export type OpsAction =
   | { type: 'order'; order: Order }
@@ -101,12 +110,14 @@ export type OpsAction =
   | { type: 'status'; id: string; status: Order['status'] } // staff only
   | { type: 'book'; booking: TeeBooking } // staff only
   | { type: 'unbook'; id: string } // staff only
+  | { type: 'block'; block: TeeBlock } // staff only
+  | { type: 'unblock'; id: string } // staff only
   /** Live telemetry: accepted only during a live event and only on the property (+250 ft). */
   | { type: 'ping'; pos: LivePosition }
   /** Kill switch: sever a player's broadcast (left the property, event over, app closed). */
   | { type: 'unping'; phone: string };
 
-const STAFF_ONLY = new Set<OpsAction['type']>(['setting', 'status', 'book', 'unbook']);
+const STAFF_ONLY = new Set<OpsAction['type']>(['setting', 'status', 'book', 'unbook', 'block', 'unblock']);
 
 // ── Hours ──────────────────────────────────────────────────────────────────────────────────────
 export const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -179,15 +190,22 @@ export function opsReducer(s: OpsState, a: OpsAction, role: Role): OpsState {
       return { ...s, orders: s.orders.map((o) => (o.id === a.id ? { ...o, status: a.status } : o)) };
     case 'book': {
       const b = a.booking;
-      if (!HHMM.test(b.time) || !/^\d{4}-\d{2}-\d{2}$/.test(b.date) || !validateBooking(b).ok) return s;
+      if (!HHMM.test(b.time) || !DATE.test(b.date) || !validateBooking(b).ok) return s;
       if (s.teeSheet.some((x) => x.date === b.date && x.time === b.time)) return s; // one booking per slot
+      if (blockFor(s.teeBlocks, b.date, b.time)) return s; // blocked time
       const clean: TeeBooking = {
-        ...b, name: sanitizeText(b.name, 40), note: b.note ? sanitizeText(b.note, 80) : undefined,
-        phone: b.phone ? normalizePhone(b.phone) ?? '' : '', email: b.email.trim().toLowerCase(),
-        size: b.status === 'blocked' ? 0 : b.size,
+        ...b, status: 'reserved', name: sanitizeText(b.name, 40), note: b.note ? sanitizeText(b.note, 80) : undefined,
+        phone: normalizePhone(b.phone) ?? '', email: b.email.trim().toLowerCase(),
       };
       return { ...s, teeSheet: [...s.teeSheet, clean] };
     }
+    case 'block': {
+      const k = a.block;
+      if (!validateBlock(k).ok) return s;
+      return { ...s, teeBlocks: [...s.teeBlocks, { ...k, note: k.note ? sanitizeText(k.note, 80) || undefined : undefined }] };
+    }
+    case 'unblock':
+      return { ...s, teeBlocks: s.teeBlocks.filter((k) => k.id !== a.id) };
     case 'unbook':
       return { ...s, teeSheet: s.teeSheet.filter((b) => b.id !== a.id) };
     case 'ping': {
@@ -260,16 +278,42 @@ export function validateTeam(teamName: string, roster: Contact[], captain: Conta
   return { ok, errors, teamName: name };
 }
 
-export function validateBooking(b: Pick<TeeBooking, 'status' | 'name' | 'size' | 'phone' | 'email'>) {
+export function validateBooking(b: Pick<TeeBooking, 'name' | 'size' | 'phone' | 'email'>) {
   const e: Partial<Record<'name' | 'size' | 'phone' | 'email', string>> = {};
-  if (!sanitizeText(b.name, 40)) e.name = b.status === 'blocked' ? 'Give a reason' : 'Required';
-  if (b.status === 'reserved') {
-    if (!(Number.isInteger(b.size) && b.size >= 1 && b.size <= 4)) e.size = '1–4 players';
-    if (!normalizePhone(b.phone)) e.phone = 'Enter a valid phone';
-    if (b.email.trim() && !EMAIL_RE.test(b.email.trim().toLowerCase())) e.email = 'Enter a valid email';
-  }
+  if (!sanitizeText(b.name, 40)) e.name = 'Required';
+  if (!(Number.isInteger(b.size) && b.size >= 1 && b.size <= 4)) e.size = '1–4 players';
+  if (!normalizePhone(b.phone)) e.phone = 'Enter a valid phone';
+  if (b.email.trim() && !EMAIL_RE.test(b.email.trim().toLowerCase())) e.email = 'Enter a valid email';
   return { ok: !Object.keys(e).length, errors: e };
 }
+
+// ── Tee-sheet blocks ───────────────────────────────────────────────────────────────────────────
+export const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_BLOCK_DAYS = 366;
+const dayNo = (d: string) => Math.round(Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) / 86_400_000);
+
+export function validateBlock(k: Pick<TeeBlock, 'reason' | 'startDate' | 'endDate' | 'from' | 'to'>) {
+  const e: Partial<Record<'reason' | 'dates' | 'times', string>> = {};
+  if (!(BLOCK_REASONS as readonly string[]).includes(k.reason)) e.reason = 'Pick a reason';
+  if (!DATE.test(k.startDate) || !DATE.test(k.endDate) || k.endDate < k.startDate) e.dates = 'End date must be on or after the start date';
+  else if (dayNo(k.endDate) - dayNo(k.startDate) >= MAX_BLOCK_DAYS) e.dates = 'Blocks can span at most a year';
+  if ((k.from == null) !== (k.to == null)) e.times = 'Set both times, or neither for all day';
+  else if (k.from != null && (!HHMM.test(k.from) || !HHMM.test(k.to!) || k.to! <= k.from)) e.times = 'End time must be after the start time';
+  return { ok: !Object.keys(e).length, errors: e };
+}
+
+/** The block covering a date/time slot, if any. */
+export const blockFor = (blocks: TeeBlock[], date: string, time: string) =>
+  blocks.find((k) => date >= k.startDate && date <= k.endDate && (k.from == null || (time >= k.from && time < k.to!)));
+
+/** All-day block for a date (the whole sheet is closed). */
+export const dayBlock = (blocks: TeeBlock[], date: string) => blocks.find((k) => k.from == null && date >= k.startDate && date <= k.endDate);
+
+export const blockLabel = (k: TeeBlock) => {
+  const d = (x: string) => new Date(`${x}T12:00`).toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const days = k.startDate === k.endDate ? d(k.startDate) : `${d(k.startDate)} – ${d(k.endDate)}`;
+  return k.from ? `${days} · ${fmtTime(k.from)}–${fmtTime(k.to!)}` : `${days} · all day`;
+};
 
 // ── Pace of play ───────────────────────────────────────────────────────────────────────────────
 /** Default target pace: 4h 21m for 18 holes. */

@@ -1,4 +1,4 @@
-import { blankContact, localDate, type Contact, type OpsState, type Registration, type TeeBooking } from './model';
+import { blankContact, localDate, type Contact, type OpsState, type Registration, type TeeBlock, type TeeBooking } from './model';
 
 /**
  * Demo-mode data so the Clubhouse OS has something to manage before any real sign-ups: a field of
@@ -42,11 +42,20 @@ export function demoTeeSheet(now = Date.now()): TeeBooking[] {
     b('07:00', 'Hansen', 4, 1), b('07:10', 'Patel', 3, 2), b('07:30', 'Schmidt', 4, 3, 'phone'), b('08:00', 'Anderson', 2, 4),
     b('08:20', 'Larson', 4, 5), b('09:00', 'Johnson', 3, 6, 'phone'), b('10:10', 'Miller', 4, 7), b('11:40', 'Thompson', 4, 8),
     b('13:00', 'Peterson', 2, 9, 'walkup'), b('14:30', 'Nelson', 4, 10),
-    { id: 'demo-tee-block-1', date, time: '12:00', status: 'blocked', name: 'Junior clinic', size: 0, phone: '', email: '', source: 'staff' },
-    { id: 'demo-tee-block-2', date, time: '12:10', status: 'blocked', name: 'Junior clinic', size: 0, phone: '', email: '', source: 'staff' },
+  ];
+}
+
+/** Demo blocks: a clinic window today, the Kid's Cup day, and the Minnesota off-season. */
+export function demoTeeBlocks(now = Date.now()): TeeBlock[] {
+  const date = localDate(now);
+  const y = new Date(now).getFullYear();
+  return [
+    { id: 'demo-block-today', reason: 'Private Event', note: 'Junior clinic', startDate: date, endDate: date, from: '12:00', to: '12:30' },
+    { id: 'demo-block-kidscup', reason: 'Tournament', note: 'Kid’s Cup shotgun', startDate: `${y}-10-17`, endDate: `${y}-10-17` },
+    { id: 'demo-block-season', reason: 'Season Closed', note: 'Winter', startDate: `${y}-11-16`, endDate: `${y + 1}-03-31` },
   ];
 }
 
 export function withDemoData(s: OpsState, eventId: string): OpsState {
-  return { ...s, registrations: [...demoRegistrations(eventId), ...s.registrations], teeSheet: [...demoTeeSheet(), ...s.teeSheet] };
+  return { ...s, registrations: [...demoRegistrations(eventId), ...s.registrations], teeSheet: [...demoTeeSheet(), ...s.teeSheet], teeBlocks: [...demoTeeBlocks(), ...s.teeBlocks] };
 }
