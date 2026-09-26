@@ -1,10 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { haptic } from '../lib/haptics';
 import { Building2, CalendarRange, Flag, Lock, Mail, Phone, ScanFace, ShieldCheck, Target, UserRound, WifiOff } from 'lucide-react';
-import { useRole } from '../auth/RoleContext';
-import { supabase } from '../lib/supabase';
 import { CourseVerificationWizard } from '../onboarding/CourseVerification';
-import { EMAIL_RE, sanitizeText } from '../../supabase/functions/_shared/validation.ts';
+import { StaffAuth } from '../staff/StaffAuth';
 import { useAuth } from '../auth/AuthContext';
 import { biometricAvailable, enroll, isEnrolled, verify } from '../lib/webauthn';
 import { StaffPortal } from './StaffPortal';
@@ -78,65 +76,18 @@ function ClubhousePortal() {
   );
 }
 
-/** Cloud: an organizer is a signed-in account listed in `organizers` (RLS: read own row). */
-async function serverOrganizerCheck(): Promise<string | null> {
-  if (!supabase) return null;
-  const { data, error } = await supabase.from('organizers').select('id').limit(1);
-  if (error) return 'Could not verify organizer access. Try again.';
-  return data?.length ? null : 'This account is not registered as a tournament organizer.';
-}
-
 function OrganizerSignIn() {
-  const { unlockOrganizer } = useRole();
-  const { signIn, cloud } = useAuth();
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [org, setOrg] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const needsConsent = !(hasAccepted('tos') && hasAccepted('privacy'));
-  const [agreed, setAgreed] = useState(false);
-  const [agreeErr, setAgreeErr] = useState(false);
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setErr(null);
-    if (sanitizeText(name, 60).length < 2) return setErr('Enter your name.');
-    if (!EMAIL_RE.test(email.trim())) return setErr('Enter a valid email.');
-    if (needsConsent && !agreed) { setAgreeErr(true); haptic('error'); return; }
-    if (needsConsent) accept(['tos', 'privacy'], 'signup');
-    setBusy(true);
-    if (cloud) {
-      const e1 = await signIn(email, password);
-      if (e1) { setBusy(false); return setErr(e1); }
-      const denied = await serverOrganizerCheck();
-      if (denied) { setBusy(false); return setErr(denied); }
-    }
-    setBusy(false);
-    haptic('success');
-    unlockOrganizer(`${sanitizeText(name, 60)}${org.trim() ? ` · ${sanitizeText(org, 60)}` : ''}`);
-  };
-
+  const [open, setOpen] = useState(false);
   return (
     <div className="relative flex h-full w-full flex-col justify-end p-5">
       <Brand sub="Tournament Organizers — run events at any verified course" />
-      <form onSubmit={submit} noValidate className="flex flex-col gap-2.5 rounded-3xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-2xl" aria-label="Organizer sign-in">
-        <label className="relative"><span className="sr-only">Your name</span><UserRound size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-          <input aria-label="Organizer name" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} placeholder="Your name" className={field} /></label>
-        <label className="relative"><span className="sr-only">Organization</span><CalendarRange size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-          <input aria-label="Organization" value={org} maxLength={60} onChange={(e) => setOrg(e.target.value)} placeholder="Organization (optional)" className={field} /></label>
-        <label className="relative"><span className="sr-only">Email</span><Mail size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-          <input aria-label="Organizer email" type="email" value={email} maxLength={254} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className={field} /></label>
-        {cloud && (
-          <label className="relative"><span className="sr-only">Password</span><Lock size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-            <input aria-label="Password" type="password" autoComplete="current-password" value={password} maxLength={128} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className={field} /></label>
-        )}
-        {needsConsent && <LegalConsent docs={['tos', 'privacy']} checked={agreed} onChange={(v) => { setAgreed(v); setAgreeErr(false); }} error={agreeErr} />}
-        {!cloud && <p className="px-1 text-[9px] text-amber-200/70">Demo mode: organizer accounts are verified by email once the backend is configured.</p>}
-        {err && <p role="alert" className="px-1 text-[11px] text-rose-300">{err}</p>}
-        <button disabled={busy} className="h-12 rounded-2xl bg-emerald-500 text-xs font-black uppercase tracking-[0.2em] text-black disabled:opacity-50">{busy ? '…' : 'Open Organizer OS'}</button>
-      </form>
+      <div className="flex flex-col gap-2 rounded-3xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-2xl">
+        <button onClick={() => setOpen(true)} className="flex h-14 items-center gap-3 rounded-2xl bg-sky-400 px-4 text-left text-black">
+          <CalendarRange size={20} /><span><span className="block text-[12px] font-black uppercase tracking-widest">Organizer sign-in</span><span className="text-[10px] opacity-75">PIN, email & password</span></span>
+        </button>
+        <p className="px-1 text-[10px] text-white/45">First time on this device? You’ll create the organizer owner account, then add your staff and volunteers under <b>Staff</b>.</p>
+      </div>
+      {open && <StaffAuth scope="tournament" onClose={() => setOpen(false)} />}
     </div>
   );
 }

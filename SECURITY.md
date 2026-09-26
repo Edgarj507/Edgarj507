@@ -249,6 +249,36 @@ Migration `20261004000000_roster_entry_reassign.sql`; tests in `supabase/tests/r
 - **Audit:** every entry and move is written to `registration_audit` (who, from, to, amount), readable only by people who manage those events.
 - **Undo (app):** the move actions record an exact snapshot (`restoreRegs`), so Undo puts the registrations back as they were.
 
+## 15. Staff management, PIN quick-switch & password recovery
+
+Migration `20261005000000_staff_management.sql`; tests in `supabase/tests/staff_management.test.ts` and `src/staff/service.test.ts`.
+
+**Accounts and permissions**
+- **One account per person:** each person has their own row per organization, holding their role, permissions and an active flag. The organization is a course for the Clubhouse OS, or an organizer for the Tournament OS.
+- **Enforced on both sides:** the UI hides screens a person can't use, and the server checks permissions in `has_perm()`. Store, pricing and course settings now require their specific permission.
+- **Who manages staff:** only people with the `staff` permission. Only owners can grant owner or `staff`. The last active owner can't be demoted, deactivated or removed, and you can't deactivate yourself.
+- **Instant revoke:** deactivating someone takes effect immediately. `is_staff()` and `has_perm()` only count active rows. Open terminals re-check the directory on every change (`useSessionGuard`) and sign that person out.
+
+**PINs**
+- **Rules:** 4–6 digits. Trivial PINs and sequences like 1234 are refused. PINs must be unique within an organization, because the PIN identifies who is signing in.
+- **Storage:** stored only as a salted, iterated hash — PBKDF2 on the device, 2000× SHA-256 on the server. The hash columns can't be read through the API.
+- **Lockout:** 5 wrong PINs lock the organization's terminals for 5 minutes. Server-side attempts are audited in `staff_access_audit`, which only staff managers can read.
+- **Quick-switch:** the server only accepts a PIN on a terminal that is already signed in to that organization, so a PIN is useless anywhere else.
+- **Lock screen:** Lock keeps the OS mounted behind a PIN lock screen. The terminal locks automatically after 5 idle minutes and signs out after 60.
+
+**Passwords and recovery**
+- **Password rules:** 10+ characters mixing letters and digits, not containing the email name. PBKDF2 with 210k iterations on the device; Supabase Auth in the cloud.
+- **Lockout:** 5 wrong passwords lock that account for 15 minutes. Errors are generic ("Email or password is incorrect").
+- **Forgot password:** always gives the same answer, whether or not the email exists, so accounts can't be discovered this way.
+- **Reset codes:** a 6-digit code from a secure random source, stored hashed. It lasts 15 minutes (invites last 72 hours), allows 5 attempts, and works once. At most 3 codes per 15 minutes per account. A new code cancels older ones, and a successful reset cancels every outstanding code. A "password changed" notice is sent afterwards.
+- **Invites:** new staff get an invite code to set their own password. Admins never see or choose staff passwords.
+- **Cloud mode:** `resetPasswordForEmail` → `verifyOtp({ type: 'recovery' })` → `updateUser`. Invited staff are linked to their account by `claim_staff_invite()` on first sign-in.
+
+**Demo-mode limitations**
+- The staff directory and hashes live in this device's storage, so anyone with the device and developer tools could read or modify them.
+- Email is simulated: codes appear in a "Demo inbox" panel on the recovery screens.
+- The server design above is what production uses.
+
 ## Deploying
 ```bash
 supabase link --project-ref <ref>

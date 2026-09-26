@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowRightLeft, CalendarRange, RotateCcw, Search, X, CircleHelp, CloudLightning, Lock, MapPin, Megaphone, Pencil, Plus, Star, Trash2, Trophy, Users } from 'lucide-react';
+import { AlertTriangle, ArrowRightLeft, LogOut, UserCog, CalendarRange, RotateCcw, Search, X, CircleHelp, CloudLightning, Lock, MapPin, Megaphone, Pencil, Plus, Star, Trash2, Trophy, Users } from 'lucide-react';
 import { useRole } from '../auth/RoleContext';
 import { useOps, newId } from '../ops/useOps';
 import { validateEvent, venueById, VENUES, type TournamentEvent } from '../ops/venues';
@@ -13,8 +13,12 @@ import { setDiagnosticView } from '../support/diagnostics';
 import { haptic } from '../lib/haptics';
 import { useUndo } from '../clubhouse/useUndo';
 import { RosterDesk } from './RosterDesk';
+import { useSessionGuard } from '../staff/useSessionGuard';
+import { StaffAuth } from '../staff/StaffAuth';
+import { StaffAdmin } from '../staff/StaffAdmin';
 
-type View = 'events' | 'roster' | 'teams' | 'broadcasts' | 'weather';
+type View = 'events' | 'roster' | 'teams' | 'broadcasts' | 'weather' | 'staff';
+const VIEW_PERM: Record<View, string> = { events: 'events', roster: 'roster', teams: 'checkin', broadcasts: 'broadcasts', weather: 'weather', staff: 'staff' };
 
 /**
  * Organizer OS — for tournament organizers who run events at one or more verified courses.
@@ -23,9 +27,10 @@ type View = 'events' | 'roster' | 'teams' | 'broadcasts' | 'weather';
  * orders) and their broadcasts only reach their own event's registrants.
  */
 export function OrganizerOS() {
-  const { organizerName, lockOrganizer } = useRole();
+  const { organizerName, signOut, lock, locked, can } = useRole();
+  useSessionGuard();
   const [ops, dispatch] = useOps('organizer');
-  const [view, setView] = useState<View>('events');
+  const [view, setView] = useState<View>(() => (['events', 'roster', 'teams', 'broadcasts', 'weather'] as View[]).find((v) => can(VIEW_PERM[v])) ?? 'weather');
   const [selectedId, setSelectedId] = useState(() => ops.settings.activeEventId);
   const [edit, setEdit] = useState<TournamentEvent | null>(null);
   const [help, setHelp] = useState(false);
@@ -47,7 +52,7 @@ export function OrganizerOS() {
 
   const nav: { id: View; label: string; icon: typeof Trophy }[] = [
     { id: 'events', label: 'Events', icon: CalendarRange }, { id: 'roster', label: 'Roster & search', icon: ArrowRightLeft }, { id: 'teams', label: 'Teams', icon: Users },
-    { id: 'broadcasts', label: 'Notify field', icon: Megaphone }, { id: 'weather', label: 'Weather', icon: CloudLightning },
+    { id: 'broadcasts', label: 'Notify field', icon: Megaphone }, { id: 'weather', label: 'Weather', icon: CloudLightning }, { id: 'staff', label: 'Staff', icon: UserCog },
   ];
 
   return (
@@ -74,13 +79,14 @@ export function OrganizerOS() {
         </label>
         <div className="flex items-center gap-2">
           <button onClick={() => setHelp(true)} aria-label="Help" className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/40 text-white/80"><CircleHelp size={15} /></button>
-          <button onClick={lockOrganizer} className="flex h-8 items-center gap-1.5 rounded-full border border-white/15 bg-black/40 px-3 text-[10px] font-bold uppercase tracking-widest text-white/80"><Lock size={12} /> Sign out</button>
+          <button onClick={lock} aria-label="Lock" className="flex h-8 items-center gap-1.5 rounded-full border border-white/15 bg-black/40 px-3 text-[10px] font-bold uppercase tracking-widest text-white/80"><Lock size={12} /> Lock</button>
+          <button onClick={signOut} className="flex h-8 items-center gap-1.5 rounded-full border border-white/15 bg-black/40 px-3 text-[10px] font-bold uppercase tracking-widest text-white/80"><LogOut size={12} /> Sign out</button>
         </div>
       </header>
 
       <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-3 p-3 @3xl:flex-row">
         <nav aria-label="Organizer navigation" className={`${glass} flex shrink-0 gap-1 overflow-x-auto rounded-2xl p-2 @3xl:w-48 @3xl:flex-col`}>
-          {nav.map(({ id, label, icon: I }) => (
+          {nav.filter((x) => can(VIEW_PERM[x.id])).map(({ id, label, icon: I }) => (
             <button key={id} onClick={() => setView(id)} aria-current={view === id ? 'page' : undefined}
               className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-2.5 py-2 text-left text-[11px] font-bold uppercase tracking-wider ${view === id ? 'bg-sky-500/20 text-sky-200 ring-1 ring-sky-400/30' : 'text-white/60 hover:bg-white/5'}`}>
               <I size={14} />{label}
@@ -89,7 +95,9 @@ export function OrganizerOS() {
         </nav>
 
         <main className="@container relative min-h-0 min-w-0 flex-1 overflow-y-auto">
-          {view === 'events' && (
+          {!can(VIEW_PERM[view]) && <p className="p-8 text-center text-[12px] text-white/50">Your role doesn’t include this screen. Pick one from the menu.</p>}
+          {view === 'staff' && can('staff') && <StaffAdmin scope="tournament" />}
+          {view === 'events' && can('events') && (
             <div className="flex flex-col gap-3" data-testid="organizer-events">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-[11px] font-black uppercase tracking-[0.2em]">Your events · {ops.events.length}</h2>
@@ -131,7 +139,7 @@ export function OrganizerOS() {
               </ul>
             </div>
           )}
-          {view === 'roster' && (
+          {view === 'roster' && can('roster') && (
             <RosterDesk ops={ops} events={ops.events} query={query} onQuery={setQuery} defaultEventId={event?.id}
               actions={{
                 onRegister: (r) => { act({ type: 'staffRegister', reg: r }, `Registered ${r.teamName} · ${ops.events.find((e) => e.id === r.eventId)?.name}`); haptic('success'); },
@@ -139,19 +147,19 @@ export function OrganizerOS() {
                 onMovePlayer: (id, slot, to, label) => { act({ type: 'movePlayer', id, slot, toEventId: to, newId: newId() }, label); haptic('success'); },
               }} />
           )}
-          {view === 'teams' && event && (
+          {view === 'teams' && can('checkin') && event && (
             <EventCRM event={event} regs={regs} details={ops.eventDetails[event.id]}
               onSave={(id, p) => dispatch({ type: 'roster', id, ...p })}
               onMarkPaid={(id, amount) => dispatch({ type: 'pay', id, amount })}
               onCheckIn={(id, on) => { dispatch({ type: 'checkIn', id, at: on ? Date.now() : null }); if (on) haptic('success'); }}
               onSaveDetails={(p) => dispatch({ type: 'eventDetails', eventId: event.id, patch: p })} />
           )}
-          {view === 'broadcasts' && event && (
+          {view === 'broadcasts' && can('broadcasts') && event && (
             <BroadcastsView key={`${event.id}-${preset.n}`} preset={preset.kind} organizer eventId={event.id}
               broadcasts={ops.broadcasts.filter((b) => b.eventId === event.id)} now={now} author={organizerName ?? 'Organizer'}
               onSend={(b) => { dispatch({ type: 'broadcast', broadcast: b }); haptic('success'); }} />
           )}
-          {view === 'weather' && venue && (
+          {view === 'weather' && can('weather') && venue && (
             <WeatherHub lat={venue.lat} lng={venue.lng} place={venue.name} onBroadcast={(kind) => { setPreset((p) => ({ kind, n: p.n + 1 })); setView('broadcasts'); }} />
           )}
         </main>
@@ -159,6 +167,7 @@ export function OrganizerOS() {
 
       {edit && <EventEditor start={edit} isNew={!ops.events.some((e) => e.id === edit.id)} onClose={() => setEdit(null)}
         onSave={(e) => { dispatch({ type: 'eventUpsert', event: e }); setSelectedId(e.id); setEdit(null); haptic('success'); }} />}
+      {locked && <StaffAuth scope="tournament" lockScreen />}
       {help && <HelpCenter audience="staff" onClose={() => setHelp(false)} />}
       {snack && (
         <div role="status" aria-label="Undo" className="absolute bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-white/15 bg-zinc-900/95 py-2 pl-4 pr-2 shadow-2xl backdrop-blur-2xl">

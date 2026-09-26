@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { haptic } from '../lib/haptics';
-import { ArrowRightLeft, BadgeDollarSign, Bug, CalendarClock, Car, ChefHat, CloudLightning, Megaphone, MessageSquareText, Package, PhoneIncoming, ChevronRight, CircleHelp, History, LayoutDashboard, LifeBuoy, Lock, MapPinOff, Radar, Receipt, RotateCcw, Settings2, ShieldCheck, Trophy, Truck, X, type LucideIcon } from 'lucide-react';
+import { ArrowRightLeft, BadgeDollarSign, LogOut, UserCog, Bug, CalendarClock, Car, ChefHat, CloudLightning, Megaphone, MessageSquareText, Package, PhoneIncoming, ChevronRight, CircleHelp, History, LayoutDashboard, LifeBuoy, Lock, MapPinOff, Radar, Receipt, RotateCcw, Settings2, ShieldCheck, Trophy, Truck, X, type LucideIcon } from 'lucide-react';
 import { SOMERBY } from '../data/course';
 import { useOps } from '../ops/useOps';
 import { charityOpen, isOpenAt, isOpenOrder } from '../ops/model';
@@ -37,9 +37,17 @@ import { PaceAlerts, StartTournamentSwitch } from './tournament/TournamentContro
 import { Queue } from './Queue';
 import { ago, glass, hhmm } from './ui';
 import { useUndo } from './useUndo';
+import { useSessionGuard } from '../staff/useSessionGuard';
+import { StaffAuth } from '../staff/StaffAuth';
+import { StaffAdmin } from '../staff/StaffAdmin';
 
-type View = 'tee' | 'eod' | 'settings' | 'support' | 'tournament' | 'ops' | 'carts' | 'messages' | 'broadcasts' | 'store' | 'weather' | 'pricing' | 'roster';
-const LABEL: Partial<Record<View, string>> = { tee: 'Tee Sheet', eod: 'End of Day', support: 'Support Tickets', settings: 'Settings', carts: 'Beverage Carts', messages: 'Messages', broadcasts: 'Broadcasts', store: 'Store & Inventory', weather: 'Weather', pricing: 'Pricing & Policies', roster: 'Roster & search' };
+type View = 'tee' | 'eod' | 'settings' | 'support' | 'tournament' | 'ops' | 'carts' | 'messages' | 'broadcasts' | 'store' | 'weather' | 'pricing' | 'roster' | 'staff';
+const LABEL: Partial<Record<View, string>> = { tee: 'Tee Sheet', eod: 'End of Day', support: 'Support Tickets', settings: 'Settings', carts: 'Beverage Carts', messages: 'Messages', broadcasts: 'Broadcasts', store: 'Store & Inventory', weather: 'Weather', pricing: 'Pricing & Policies', roster: 'Roster & search', staff: 'Staff & Permissions' };
+/** Permission each screen needs (Weather is open to every signed-in staff member). */
+const VIEW_PERM: Partial<Record<View, string>> = {
+  tee: 'teeSheet', eod: 'reports', settings: 'settings', support: 'support', tournament: 'tournament', ops: 'tournament', carts: 'orders',
+  messages: 'messages', broadcasts: 'broadcasts', store: 'store', pricing: 'pricing', roster: 'tournament', staff: 'staff',
+};
 
 const DEMO = !import.meta.env.VITE_SUPABASE_URL;
 
@@ -53,12 +61,14 @@ const DEMO = !import.meta.env.VITE_SUPABASE_URL;
  *     "Start Tournament". No map or locations exist before that switch.
  */
 export function ClubhouseOS() {
-  const { lockStaff, staffName } = useRole();
+  const { lockStaff, staffName, can, locked, signOut } = useRole();
+  useSessionGuard();
   const [ops, dispatch] = useOps('staff');
   const s = ops.settings;
   const event = ops.events.find((e) => e.id === s.activeEventId) ?? ops.events[0] ?? EVENTS[0];
   const home = venueById('somerby')!;
   const [view, setView] = useState<View>(() => (s.tournamentLive ? 'tournament' : 'tee'));
+  const firstAllowed = (['tee', 'carts', 'tournament', 'messages', 'store', 'eod', 'weather'] as View[]).find((v) => !VIEW_PERM[v] || can(VIEW_PERM[v]!)) ?? 'weather';
   const [clock, setClock] = useState(() => Date.now());
   const [selected, setSelected] = useState<string | null>(null);
   const [queueOpen, setQueueOpen] = useState(false);
@@ -85,7 +95,10 @@ export function ClubhouseOS() {
   const openOrders = ops.orders.filter(isOpenOrder).length;
   const kitchenOpen = isOpenAt(s.kitchenHours, clock);
   // In-House Tournament mode merges the tee sheet and tournament pages into one Operations view.
-  const current: View = s.inHouse ? (view === 'tee' || view === 'tournament' ? 'ops' : view) : view === 'ops' ? 'tee' : view;
+  const mapView = (v: View): View => (s.inHouse ? (v === 'tee' || v === 'tournament' ? 'ops' : v) : v === 'ops' ? 'tee' : v);
+  const wanted = mapView(view);
+  // Never render a screen this person isn't allowed to use.
+  const current: View = VIEW_PERM[wanted] && !can(VIEW_PERM[wanted]!) ? mapView(firstAllowed) : wanted;
   const tournament = current === 'tournament';
   const crumbs = current === 'tournament' ? ['Tournament', event.name, s.tournamentLive ? 'Live Radar' : 'Pre-Event CRM']
     : current === 'ops' ? ['Clubhouse', 'Operations', `In-house · ${s.tournamentLive ? 'Live' : 'Pre-event'}`]
@@ -144,19 +157,20 @@ export function ClubhouseOS() {
           <span role="status" className={`flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-widest ${kitchenOpen ? 'bg-emerald-500/10 text-emerald-300' : 'bg-red-500/10 text-red-300'}`}>
             <ChefHat size={11} /> Kitchen {kitchenOpen ? 'open' : 'closed'}
           </span>
-          <button onClick={() => setPhoneOrder(true)} aria-label="Phone-In Order" className="flex h-8 items-center gap-1.5 rounded-full border border-sky-300/40 bg-sky-400/10 px-3 text-[10px] font-bold uppercase tracking-widest text-sky-100">
+          {can('orders') && <button onClick={() => setPhoneOrder(true)} aria-label="Phone-In Order" className="flex h-8 items-center gap-1.5 rounded-full border border-sky-300/40 bg-sky-400/10 px-3 text-[10px] font-bold uppercase tracking-widest text-sky-100">
             <PhoneIncoming size={12} /> Phone-In<span className="hidden @7xl:inline"> Order</span>
-          </button>
-          <button onClick={() => setQueueOpen(true)} className="relative flex h-8 items-center gap-1.5 rounded-full border border-white/15 bg-black/40 px-3 text-[10px] font-bold uppercase tracking-widest text-white/80">
+          </button>}
+          {can('orders') && <button onClick={() => setQueueOpen(true)} className="relative flex h-8 items-center gap-1.5 rounded-full border border-white/15 bg-black/40 px-3 text-[10px] font-bold uppercase tracking-widest text-white/80">
             <Truck size={12} /> Orders
             {openOrders > 0 && <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-400 px-1 text-[9px] font-black text-black">{openOrders}</span>}
-          </button>
+          </button>}
           <button onClick={() => setHistoryOpen(true)} aria-label="Recent actions" className="relative flex h-8 items-center gap-1.5 rounded-full border border-white/15 bg-black/40 px-3 text-[10px] font-bold uppercase tracking-widest text-white/80">
             <History size={12} /><span className="hidden @7xl:inline">History</span>{history.length > 0 && <span className="font-mono text-white/50">{history.length}</span>}
           </button>
           <button onClick={() => setReport(true)} aria-label="Report a problem" className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/40 text-white/80"><Bug size={14} /></button>
           <button onClick={() => setHelp(true)} aria-label="Help" className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/40 text-white/80"><CircleHelp size={15} /></button>
-          <button onClick={lockStaff} className="flex h-8 items-center gap-1.5 rounded-full border border-white/15 bg-black/40 px-3 text-[10px] font-bold uppercase tracking-widest text-white/80 active:scale-95">
+          <button onClick={signOut} aria-label="Sign out" title="Sign out" className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/40 text-white/80"><LogOut size={13} /></button>
+          <button onClick={lockStaff} aria-label={`Lock${staffName ? ` · ${staffName}` : ''}`} className="flex h-8 items-center gap-1.5 rounded-full border border-white/15 bg-black/40 px-3 text-[10px] font-bold uppercase tracking-widest text-white/80 active:scale-95">
             <Lock size={12} /> Lock{staffName ? ` · ${staffName}` : ''}
           </button>
         </div>
@@ -168,42 +182,45 @@ export function ClubhouseOS() {
           {s.inHouse ? (
             <section aria-label="Clubhouse operations" className={`${glass} rounded-2xl p-2`}>
               <SectionLabel dot={s.tournamentLive ? 'bg-red-500 animate-pulse' : 'bg-emerald-400'} title="Clubhouse" sub={`In-house tournament · ${event.name}`} />
-              <NavItem icon={LayoutDashboard} label="Operations" active={current === 'ops'} onClick={() => setView('ops')} tone="emerald" badge={s.tournamentLive ? 'LIVE' : undefined} />
-              <NavItem icon={ArrowRightLeft} label="Roster & search" active={current === 'roster'} onClick={() => setView('roster')} tone="emerald" />
-              <NavItem icon={Car} label="Bev Carts" active={current === 'carts'} onClick={() => setView('carts')} tone="emerald" badge={ops.orders.filter((o) => o.cartId && isOpenOrder(o)).length ? String(ops.orders.filter((o) => o.cartId && isOpenOrder(o)).length) : undefined} />
-              <NavItem icon={MessageSquareText} label="Messages" active={current === 'messages'} onClick={() => setView('messages')} tone="emerald" badge={unreadMsgs ? String(unreadMsgs) : undefined} />
-              <NavItem icon={Megaphone} label="Broadcasts" active={current === 'broadcasts'} onClick={() => setView('broadcasts')} tone="emerald" />
+              <NavItem icon={LayoutDashboard} label="Operations" perm="tournament" active={current === 'ops'} onClick={() => setView('ops')} tone="emerald" badge={s.tournamentLive ? 'LIVE' : undefined} />
+              <NavItem icon={ArrowRightLeft} label="Roster & search" perm="tournament" active={current === 'roster'} onClick={() => setView('roster')} tone="emerald" />
+              <NavItem icon={Car} label="Bev Carts" perm="orders" active={current === 'carts'} onClick={() => setView('carts')} tone="emerald" badge={ops.orders.filter((o) => o.cartId && isOpenOrder(o)).length ? String(ops.orders.filter((o) => o.cartId && isOpenOrder(o)).length) : undefined} />
+              <NavItem icon={MessageSquareText} label="Messages" perm="messages" active={current === 'messages'} onClick={() => setView('messages')} tone="emerald" badge={unreadMsgs ? String(unreadMsgs) : undefined} />
+              <NavItem icon={Megaphone} label="Broadcasts" perm="broadcasts" active={current === 'broadcasts'} onClick={() => setView('broadcasts')} tone="emerald" />
               <NavItem icon={CloudLightning} label="Weather" active={current === 'weather'} onClick={() => setView('weather')} tone="emerald" />
-              <NavItem icon={Package} label="Store" active={current === 'store'} onClick={() => setView('store')} tone="emerald" />
-                <NavItem icon={BadgeDollarSign} label="Pricing" active={current === 'pricing'} onClick={() => setView('pricing')} tone="emerald" />
-              <NavItem icon={Receipt} label="End of Day" active={current === 'eod'} onClick={() => setView('eod')} tone="emerald" />
-              <NavItem icon={LifeBuoy} label="Support" active={current === 'support'} onClick={() => setView('support')} tone="emerald" badge={unresolved ? String(unresolved) : undefined} />
-              <NavItem icon={Settings2} label="Settings" active={current === 'settings'} onClick={() => setView('settings')} tone="emerald" />
-              {startSwitch}
+              <NavItem icon={Package} label="Store" perm="store" active={current === 'store'} onClick={() => setView('store')} tone="emerald" />
+                <NavItem icon={BadgeDollarSign} label="Pricing" perm="pricing" active={current === 'pricing'} onClick={() => setView('pricing')} tone="emerald" />
+              <NavItem icon={Receipt} label="End of Day" perm="reports" active={current === 'eod'} onClick={() => setView('eod')} tone="emerald" />
+              <NavItem icon={LifeBuoy} label="Support" perm="support" active={current === 'support'} onClick={() => setView('support')} tone="emerald" badge={unresolved ? String(unresolved) : undefined} />
+              <NavItem icon={Settings2} label="Settings" perm="settings" active={current === 'settings'} onClick={() => setView('settings')} tone="emerald" />
+                <NavItem icon={UserCog} label="Staff" perm="staff" active={current === 'staff'} onClick={() => setView('staff')} tone="emerald" />
+              {can('tournament') && startSwitch}
             </section>
           ) : (
             <>
               <section aria-label="Clubhouse operations" className={`${glass} rounded-2xl p-2`}>
                 <SectionLabel dot="bg-emerald-400" title="Clubhouse" sub="Everyday operations" />
-                <NavItem icon={CalendarClock} label="Tee Sheet" active={current === 'tee'} onClick={() => setView('tee')} tone="emerald" />
-                <NavItem icon={Car} label="Bev Carts" active={current === 'carts'} onClick={() => setView('carts')} tone="emerald" badge={ops.orders.filter((o) => o.cartId && isOpenOrder(o)).length ? String(ops.orders.filter((o) => o.cartId && isOpenOrder(o)).length) : undefined} />
-                <NavItem icon={MessageSquareText} label="Messages" active={current === 'messages'} onClick={() => setView('messages')} tone="emerald" badge={unreadMsgs ? String(unreadMsgs) : undefined} />
-                <NavItem icon={Megaphone} label="Broadcasts" active={current === 'broadcasts'} onClick={() => setView('broadcasts')} tone="emerald" />
+                <NavItem icon={CalendarClock} label="Tee Sheet" perm="teeSheet" active={current === 'tee'} onClick={() => setView('tee')} tone="emerald" />
+                <NavItem icon={Car} label="Bev Carts" perm="orders" active={current === 'carts'} onClick={() => setView('carts')} tone="emerald" badge={ops.orders.filter((o) => o.cartId && isOpenOrder(o)).length ? String(ops.orders.filter((o) => o.cartId && isOpenOrder(o)).length) : undefined} />
+                <NavItem icon={MessageSquareText} label="Messages" perm="messages" active={current === 'messages'} onClick={() => setView('messages')} tone="emerald" badge={unreadMsgs ? String(unreadMsgs) : undefined} />
+                <NavItem icon={Megaphone} label="Broadcasts" perm="broadcasts" active={current === 'broadcasts'} onClick={() => setView('broadcasts')} tone="emerald" />
                 <NavItem icon={CloudLightning} label="Weather" active={current === 'weather'} onClick={() => setView('weather')} tone="emerald" />
-                <NavItem icon={Package} label="Store" active={current === 'store'} onClick={() => setView('store')} tone="emerald" />
-                <NavItem icon={BadgeDollarSign} label="Pricing" active={current === 'pricing'} onClick={() => setView('pricing')} tone="emerald" />
-                <NavItem icon={Receipt} label="End of Day" active={current === 'eod'} onClick={() => setView('eod')} tone="emerald" />
-                <NavItem icon={LifeBuoy} label="Support" active={current === 'support'} onClick={() => setView('support')} tone="emerald" badge={unresolved ? String(unresolved) : undefined} />
-                <NavItem icon={Settings2} label="Settings" active={current === 'settings'} onClick={() => setView('settings')} tone="emerald" />
+                <NavItem icon={Package} label="Store" perm="store" active={current === 'store'} onClick={() => setView('store')} tone="emerald" />
+                <NavItem icon={BadgeDollarSign} label="Pricing" perm="pricing" active={current === 'pricing'} onClick={() => setView('pricing')} tone="emerald" />
+                <NavItem icon={Receipt} label="End of Day" perm="reports" active={current === 'eod'} onClick={() => setView('eod')} tone="emerald" />
+                <NavItem icon={LifeBuoy} label="Support" perm="support" active={current === 'support'} onClick={() => setView('support')} tone="emerald" badge={unresolved ? String(unresolved) : undefined} />
+                <NavItem icon={Settings2} label="Settings" perm="settings" active={current === 'settings'} onClick={() => setView('settings')} tone="emerald" />
+                <NavItem icon={UserCog} label="Staff" perm="staff" active={current === 'staff'} onClick={() => setView('staff')} tone="emerald" />
               </section>
 
+              {can('tournament') && (
               <section aria-label="Tournament operations" className="rounded-2xl border border-amber-300/25 bg-amber-300/[0.05] p-2 backdrop-blur-2xl">
                 <SectionLabel dot={s.tournamentLive ? 'bg-red-500 animate-pulse' : 'bg-amber-300'} title="Tournament" sub={event.name} />
-                <NavItem icon={s.tournamentLive ? Radar : Trophy} label={s.tournamentLive ? 'Live Radar' : 'Pre-Event CRM'} active={tournament} onClick={() => setView('tournament')} tone="amber"
+                <NavItem perm="tournament" icon={s.tournamentLive ? Radar : Trophy} label={s.tournamentLive ? 'Live Radar' : 'Pre-Event CRM'} active={tournament} onClick={() => setView('tournament')} tone="amber"
                   badge={s.tournamentLive ? 'LIVE' : `${live.regs.length} teams`} />
-                <NavItem icon={ArrowRightLeft} label="Roster & search" active={current === 'roster'} onClick={() => setView('roster')} tone="amber" />
-                {startSwitch}
-              </section>
+                <NavItem icon={ArrowRightLeft} label="Roster & search" perm="tournament" active={current === 'roster'} onClick={() => setView('roster')} tone="amber" />
+                {can('tournament') && startSwitch}
+              </section>)}
             </>
           )}
         </aside>
@@ -239,6 +256,7 @@ export function ClubhouseOS() {
                 onMovePlayer: (id, slot, to, label) => { act({ type: 'movePlayer', id, slot, toEventId: to, newId: newId() }, label); haptic('success'); },
               }} />
           )}
+          {current === 'staff' && <StaffAdmin scope="clubhouse" />}
           {current === 'pricing' && <PricingPolicies pricing={ops.pricing} onPublish={(p) => { act({ type: 'pricing', pricing: p }, 'Published pricing & policies'); haptic('success'); }} />}
           {current === 'weather' && <WeatherHub lat={home.lat} lng={home.lng} place={home.name} onBroadcast={broadcastPreset} />}
           {current === 'ops' && (
@@ -276,6 +294,7 @@ export function ClubhouseOS() {
         onAck={(id) => { dispatch({ type: 'sosStatus', id, status: 'acknowledged', by: staffName ?? 'Staff' }); haptic('success'); }}
         onResolve={(id) => dispatch({ type: 'sosStatus', id, status: 'resolved', by: staffName ?? 'Staff' })}
         onMessage={(a) => { dispatch({ type: 'sosStatus', id: a.id, status: 'acknowledged', by: staffName ?? 'Staff' }); setThread(openThread({ name: a.name, phone: a.phone })); setCartMode(false); setView('messages'); }} />
+      {locked && <StaffAuth scope="clubhouse" lockScreen />}
       {help && <HelpCenter audience="staff" onClose={() => setHelp(false)} onReport={() => { setHelp(false); setReport(true); }} />}
       {report && <BugReport role="staff" reporter={staffName ?? 'Staff'} onSubmit={(t) => dispatch({ type: 'ticket', ticket: t })} onClose={() => setReport(false)} />}
       {snack && (
@@ -329,7 +348,9 @@ function SectionLabel({ dot, title, sub }: { dot: string; title: string; sub: st
   );
 }
 
-function NavItem({ icon: Icon, label, active, onClick, tone, badge }: { icon: LucideIcon; label: string; active: boolean; onClick: () => void; tone: 'emerald' | 'amber'; badge?: string }) {
+function NavItem({ icon: Icon, label, active, onClick, tone, badge, perm }: { icon: LucideIcon; label: string; active: boolean; onClick: () => void; tone: 'emerald' | 'amber'; badge?: string; perm?: string }) {
+  const { can } = useRole();
+  if (perm && !can(perm)) return null;
   const on = tone === 'emerald' ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-400/30' : 'bg-amber-300/15 text-amber-100 ring-1 ring-amber-300/30';
   return (
     <button onClick={onClick} aria-current={active ? 'page' : undefined}
