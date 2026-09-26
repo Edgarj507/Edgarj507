@@ -1,4 +1,4 @@
-import { groupStatus, type Group } from './model';
+import { groupStatus, type Group, type Registration } from './model';
 
 type LL = [number, number];
 
@@ -17,32 +17,37 @@ export function alongPath(path: LL[], f: number): LL {
   return path[path.length - 1];
 }
 
-const NAMES = [
-  ['Hansen', 'Olson', 'Kruger', 'Lee'], ['Patel', 'Nguyen', 'Brooks'], ['Schmidt', 'Moore', 'Rivera', 'Kim'], ['Anderson', 'Berg'],
-  ['Larson', 'Diaz', 'Walsh', 'Novak'], ['Johnson', 'Park', 'Ortiz'], ['Miller', 'Chen', 'Fischer', 'Ruiz'], ['Thompson', 'Ali', 'Grant', 'Holm'],
-  ['Peterson', 'Young'], ['Nelson', 'Cruz', 'Baker', 'Wood'], ['Carlson', 'Ito', 'Frey'], ['Swanson', 'Lopez', 'Hill', 'Reed'],
-  ['Erickson', 'Shah', 'Ward', 'Stone'], ['Lund', 'Price'], ['Hedlund', 'Morales', 'Gray', 'Webb'], ['Bauer', 'Kaur', 'Fox', 'Lang'],
-];
-// Minutes per hole; a few groups are slow so the radar has something to flag.
-const PACE = [14, 14.4, 13.8, 15, 17.8, 14.2, 16.9, 14.5, 13.9, 14.8, 15.2, 14.1, 14.6, 13.7, 14.3, 14.5];
-const INTERVAL_MIN = 16;
-
-/** Demo tee sheet: tee times every 16 minutes, the first ~3h20m before `now`. */
-export function demoGroups(now: number): Group[] {
-  const start = Math.floor((now - 200 * 60_000) / (INTERVAL_MIN * 60_000)) * INTERVAL_MIN * 60_000;
-  return NAMES.map((players, i) => ({
-    id: `g${i + 1}`,
-    name: players[0],
-    players,
-    teeTime: start + i * INTERVAL_MIN * 60_000,
-    minPerHole: PACE[i],
-  }));
+/** Stable 0..1 value from a string. */
+function unit(s: string) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return ((h >>> 0) % 10_000) / 10_000;
 }
 
-/** Position of every group on the course, with its pace. */
-export function placeGroups(groups: Group[], holePaths: LL[][], now: number) {
+/**
+ * Shotgun start: every registered team tees off at `liveSince` on its own hole (team n → hole n,
+ * wrapping at 18). Until real phone GPS arrives, each team's pace is simulated around the target;
+ * roughly one in four plays slow enough to trip the alert.
+ */
+export function eventGroups(regs: Registration[], liveSince: number, target: number): Group[] {
+  return regs.map((r, i) => {
+    const u = unit(r.id);
+    const minPerHole = u > 0.75 ? target + 2.2 + u * 1.5 : target - 0.8 + u * 1.6;
+    return {
+      id: r.id,
+      name: `Group ${i + 1} (${r.captain.last.split(' ')[0] || r.teamName})`,
+      players: [r.captain, ...r.roster].filter((c) => c.first).map((c) => `${c.first} ${c.last}`),
+      teeTime: liveSince,
+      minPerHole: Math.round(minPerHole * 10) / 10,
+      startHole: (i % 18) + 1,
+    };
+  });
+}
+
+/** Position of every group on the course, with its pace against the target. */
+export function placeGroups(groups: Group[], holePaths: LL[][], now: number, target: number) {
   return groups.map((g) => {
-    const st = groupStatus(g, now);
+    const st = groupStatus(g, now, target);
     const path = holePaths[st.hole - 1] ?? holePaths[0];
     return { group: g, ...st, at: st.started && !st.finished && path ? alongPath(path, st.fraction) : null };
   });

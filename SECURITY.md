@@ -103,6 +103,34 @@ Migration: `supabase/migrations/20260925010000_pin_tracking.sql`. Tests: `supaba
 - The staff PIN is per-device.
 - Payments are simulated and no receipt email is sent.
 
+## 9. Event phases & geofenced location privacy
+
+**Phases.** The Clubhouse OS has two event phases, switched by staff with "Start Tournament" (`course_settings.tournament_live`):
+
+| | Pre-Tournament CRM | Live Event |
+|---|---|---|
+| Map / radar | None | Satellite pace radar |
+| Player locations | Not collected, not stored, not shown | On property only, during the event |
+| Captain roster edits | Allowed (`reg_captain_edit` → `event_editable()`) | Locked (staff can still override) |
+
+- **Ending the event** (`on_live_change` trigger) deletes every stored position for the course.
+
+**Geofence** (`src/lib/geofence.ts`, `src/ops/useTelemetry.ts`):
+- **Boundary:** the course boundary is the convex hull of every mapped hole, plus a **250 ft (76.2 m) buffer** for phone GPS drift and parking-lot arrivals.
+- **Client gate:** the phone watches GPS only while the event is live, the player is on a registered team, and the time is inside the event window. Every fix is checked against the geofence.
+- **Auto-kill switch:** if a player hasn't arrived, or leaves the buffer, the app stops sending and deletes the last stored fix (`unping`, or `delete` on `live_positions`). It also severs the broadcast when the app is backgrounded.
+- **Server backstop:** `live_positions` RLS (`position_allowed()`) accepts a fix only if the event is live, the sender is the captain or on the roster (phone match via `auth.users`), and the point is inside the course's buffered box. Staff can read positions only while live.
+- **Keeping client and server in sync:** a unit test checks that the SQL box matches the app's boundary.
+- **Notice:** checkout and round setup both show *"Live tracking is strictly limited to your scheduled tee time and only activates upon arrival at the facility."*
+
+**Hours of operation:** `price_order()` rejects food and drink with `kitchen_closed` outside the restaurant hours, in the course's timezone. The app shows a locked "Kitchen Closed" state instead of the menu. Pro shop items and charity mulligans are unaffected.
+
+**Tee sheet:** `tee_times` is staff-only (RLS `tee_staff`) and allows one booking per course and start time. A reservation needs a party of 1–4 and a valid phone number.
+
+**Demo-mode caveats:**
+- Group pace on the radar is simulated. A real on-property fix replaces the simulated dot.
+- The server-side geofence is a buffered bounding box; the exact hull-plus-buffer test runs on the phone.
+
 ## Deploying
 ```bash
 supabase link --project-ref <ref>

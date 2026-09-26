@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { HandCoins, HeartHandshake, Minus, Plus, ScanFace, ShoppingBag, X } from 'lucide-react';
+import { ChefHat, HandCoins, HeartHandshake, Lock, Minus, Plus, ScanFace, ShoppingBag, X } from 'lucide-react';
 import { MENU, MULLIGAN, cartTotal } from '../ops/menu';
-import type { OpsSettings, OrderItem } from '../ops/model';
+import { fmtTime, isOpenAt, type OpsSettings, type OrderItem } from '../ops/model';
 import { isEnrolled, verify } from '../lib/webauthn';
 
 interface Props {
@@ -27,6 +27,9 @@ export function StoreSheet({ mode, settings, hole, mulligansBought, onPlace, onC
   const charity = mode === 'charity';
   const catalog = charity ? [MULLIGAN] : MENU;
   const mullRoom = Math.max(0, settings.mulliganLimit - mulligansBought);
+  // Restaurant hours come from the Clubhouse OS; F&B locks when the kitchen is closed (no ghost orders).
+  const kitchenOpen = isOpenAt(settings.kitchenHours, Date.now());
+  const locked = (kind: string) => kind === 'fnb' && !kitchenOpen;
   const max = (sku: string) => (sku === MULLIGAN.sku ? mullRoom : 10);
   const items: OrderItem[] = catalog.filter((m) => qty[m.sku]).map((m) => ({ sku: m.sku, name: m.name, price: m.price, qty: qty[m.sku], kind: m.kind }));
   const total = cartTotal(items);
@@ -86,6 +89,17 @@ export function StoreSheet({ mode, settings, hole, mulligansBought, onPlace, onC
                   {(i === 0 || catalog[i - 1].section !== m.section) && !charity && (
                     <div className="mb-1 mt-1 text-[9px] font-bold uppercase tracking-[0.2em] text-white/40">{m.section}</div>
                   )}
+                  {locked(m.kind) ? (
+                    (i === 0 || catalog[i - 1].kind !== m.kind) && (
+                      <div role="status" className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/50 px-3 py-3">
+                        <span className="grid h-9 w-9 place-items-center rounded-full bg-white/5 ring-1 ring-white/10"><Lock size={15} className="text-white/60" /></span>
+                        <span className="flex flex-col">
+                          <span className="flex items-center gap-1.5 text-[12px] font-black uppercase tracking-widest text-white/80"><ChefHat size={13} /> Kitchen Closed</span>
+                          <span className="text-[10px] text-white/45">Food & drink open {fmtTime(settings.kitchenHours.open)} – {fmtTime(settings.kitchenHours.close)}</span>
+                        </span>
+                      </div>
+                    )
+                  ) : (
                   <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
                     <span className="flex flex-col">
                       <span className="text-[12px] font-semibold text-white/90">{m.name}</span>
@@ -97,6 +111,7 @@ export function StoreSheet({ mode, settings, hole, mulligansBought, onPlace, onC
                       <button onClick={() => bump(m.sku, 1)} aria-label={`Add ${m.name}`} disabled={(qty[m.sku] ?? 0) >= max(m.sku)} className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white/70 disabled:opacity-30"><Plus size={12} /></button>
                     </span>
                   </div>
+                  )}
                 </li>
               ))}
             </ul>

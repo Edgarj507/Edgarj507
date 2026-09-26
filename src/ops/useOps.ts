@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { initialOps, opsReducer, type OpsAction, type OpsState, type Role } from './model';
+import { DEFAULT_SETTINGS, initialOps, localDate, opsReducer, type OpsAction, type OpsState, type Registration, type Role } from './model';
+import { demoTeeSheet, withDemoData } from './demoSeed';
+import { EVENTS } from '../tournaments/events';
 
 /**
  * Demo backend: ops state persisted locally and synced live across tabs/windows (player phone and
@@ -9,12 +11,29 @@ import { initialOps, opsReducer, type OpsAction, type OpsState, type Role } from
 const KEY = 'eg.ops.v1';
 const chan = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('eg-ops') : null;
 
+const DEMO = !import.meta.env.VITE_SUPABASE_URL;
+
+/** Load (and upgrade) the stored state; older saves get new settings defaults and fields. */
 function read(): OpsState {
+  let s: OpsState | null = null;
   try {
-    const s = JSON.parse(localStorage.getItem(KEY) ?? 'null');
-    if (s?.v === 1 && s.settings && Array.isArray(s.orders) && Array.isArray(s.registrations)) return s;
+    const raw = JSON.parse(localStorage.getItem(KEY) ?? 'null');
+    if (raw?.v === 1 && raw.settings && Array.isArray(raw.orders) && Array.isArray(raw.registrations)) {
+      s = {
+        ...raw,
+        settings: { ...DEFAULT_SETTINGS, ...raw.settings },
+        registrations: raw.registrations.map((r: Registration) => ({ ...r, paid: r.paid ?? r.total })),
+        teeSheet: Array.isArray(raw.teeSheet) ? raw.teeSheet : [],
+        positions: Array.isArray(raw.positions) ? raw.positions : [],
+      };
+    }
   } catch { /* corrupt or blocked */ }
-  return initialOps();
+  if (!s) return DEMO ? withDemoData(initialOps(), EVENTS[0].id) : initialOps();
+  // Keep the demo tee sheet on today's date.
+  if (DEMO && !s.teeSheet.some((b) => b.id.startsWith('demo-tee-') && b.date === localDate())) {
+    s = { ...s, teeSheet: [...demoTeeSheet(), ...s.teeSheet.filter((b) => !b.id.startsWith('demo-tee-'))] };
+  }
+  return s;
 }
 
 export function useOps(role: Role) {

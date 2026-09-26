@@ -20,6 +20,7 @@ import { StoreSheet } from './StoreSheet';
 import { useOps, newId } from '../ops/useOps';
 import { mulligansBought, type OrderItem } from '../ops/model';
 import { MULLIGAN } from '../ops/menu';
+import type { TelemetryStatus } from '../ops/useTelemetry';
 import { caddiePhrase, speak, speechAvailable } from '../lib/voiceCaddie';
 import type { ClubStats } from '../lib/hooks';
 import type { SyncStatus } from '../lib/sync';
@@ -61,6 +62,8 @@ interface Props {
   playerName?: string;
   /** Charity/Event Store purchase: adds mulligans to this round's ledger. */
   onBuyMulligans?: (qty: number, price: number) => void;
+  /** Tournament location sharing state (geofenced). */
+  telemetry?: TelemetryStatus;
 }
 
 const M_TO_YD = 1.09361;
@@ -75,7 +78,7 @@ const scoreColor = (s: string) => (s.startsWith('-') ? 'text-red-400' : s === 'E
 
 export function CaddieHud({
   hole, tee, strokes, roundScore, format, isLastHole, bag, onLog, onUndo, onNext, onScorecard, onExit, buddies = [], tournamentMode = false, sync = 'off', remoteRoundId, courseName, courseAttribution,
-  holeLines, clubStats = {}, ledger, onMulligan, onUnmulligan, playerName = 'Guest', onBuyMulligans,
+  holeLines, clubStats = {}, ledger, onMulligan, onUnmulligan, playerName = 'Guest', onBuyMulligans, telemetry = 'off',
 }: Props) {
   const [justLogged, setJustLogged] = useState(false);
   const [puttView, setPuttView] = useState(false);
@@ -326,6 +329,12 @@ export function CaddieHud({
               <ShieldHalf size={14} />
             </button>
           </div>
+          {telemetry !== 'off' && (
+            <span role="status" aria-label="Location sharing" className={`${glass} flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider ${telemetry === 'sharing' ? 'text-emerald-300' : 'text-white/60'}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${telemetry === 'sharing' ? 'animate-pulse bg-emerald-400' : 'bg-white/40'}`} />
+              {telemetry === 'sharing' ? 'Live · on property' : telemetry === 'off-property' ? 'Not sharing · off property' : telemetry === 'denied' ? 'Location blocked' : 'Locating…'}
+            </span>
+          )}
           {ledger && (
             <button onClick={() => setMullOpen(true)} className={`${glass} flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold text-amber-200`}>
               <HandCoins size={12} /> {mullLeft} {t('mull.left')}

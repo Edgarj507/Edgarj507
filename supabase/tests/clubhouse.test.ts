@@ -20,6 +20,8 @@ beforeAll(async () => {
   db = await createDb();
   for (const [id, h] of [[P, 'pat'], [Q, 'quin'], [S, 'staffer']]) await signUp(db, id, h);
   await db.query(`insert into public.staff_members (user_id, course_name, role) values ($1, $2, 'organizer')`, [S, C]);
+  // Kitchen open around the clock for these tests (hours are covered in tournament_ops.test.ts).
+  await db.query(`update public.course_settings set kitchen_open = '00:01', kitchen_close = '00:00' where course_name = $1`, [C]);
   eventId = (await db.query<{ id: string }>(`insert into public.events (course_name, name, starts_at, foursome_price_cents) values ($1, 'Kid''s Cup Charity Tournament', now() + interval '7 days', 60000) returning id`, [C])).rows[0].id;
 });
 

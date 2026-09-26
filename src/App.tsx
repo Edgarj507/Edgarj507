@@ -26,6 +26,10 @@ import { useRole } from './auth/RoleContext';
 import { ClubhouseOS } from './clubhouse/ClubhouseOS';
 import { StaffPortal } from './views/StaffPortal';
 import { Tournaments } from './tournaments/Tournaments';
+import { TrackingNotice } from './views/TrackingNotice';
+import { useOps } from './ops/useOps';
+import { useTelemetry } from './ops/useTelemetry';
+import { normalizePhone } from './lib/sms';
 
 const FORMAT_HELP: Record<Format, string> = {
   'Stroke Play': 'Every stroke counts. Total vs par.',
@@ -76,6 +80,16 @@ export default function App() {
   });
   const auth = useAuth();
   const { role } = useRole();
+  // Tournament telemetry (player side): only during a live event, only for registered players,
+  // only inside the event window, and only on the property — see useTelemetry / lib/geofence.
+  const [ops, opsDispatch] = useOps('player');
+  const myPhone = auth.phone ? normalizePhone(auth.phone) : null;
+  const onTeam = !!myPhone && ops.registrations.some(r => [r.captain, ...r.roster].some(c => normalizePhone(c.phone) === myPhone));
+  const inWindow = !!ops.settings.liveSince && Date.now() - ops.settings.liveSince < 8 * 3600_000;
+  const telemetry = useTelemetry({
+    active: role === 'player' && ops.settings.tournamentLive && onTeam && inWindow,
+    player: auth.profile.display_name, phone: myPhone, dispatch: opsDispatch,
+  });
   const [staffGate, setStaffGate] = useState(false);
   const { t, d, u } = usePrefs();
   const roundVisibility: Visibility = courseSetup.visibility ?? auth.profile.stats_visibility;
@@ -267,7 +281,8 @@ export default function App() {
         </div>
 
         <div className="flex flex-col gap-5 z-10 overflow-y-auto no-scrollbar pb-24">
-          
+          <TrackingNotice />
+
           <div className="flex flex-col gap-2">
             <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">{t('setup.course')}</span>
             <div className="flex flex-col gap-1.5">
@@ -677,6 +692,7 @@ export default function App() {
             onExit={() => setCurrentView('menu')}
             buddies={liveBuddies}
             tournamentMode={courseSetup.tournamentMode}
+            telemetry={telemetry.status}
             playerName={auth.profile.display_name}
             onBuyMulligans={(qty, price) => dispatch({ type: 'buyMulligans', player: 'me', qty, price })}
           />
