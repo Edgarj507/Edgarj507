@@ -1,11 +1,31 @@
 import type { TeeId } from '../data/course';
 
+export type Outcome = 'center' | 'left' | 'right' | 'long' | 'short';
+export const OUTCOMES: Outcome[] = ['center', 'left', 'right', 'long', 'short'];
+
 export interface Shot {
   club: string;
   line: number;
   playsLike: number;
   t: number;
+  /** Where the shot finished relative to the target (dispersion stats). */
+  outcome?: Outcome;
+  /** Scramble: whose ball the team played ('me' or a buddy id). */
+  by?: string;
 }
+
+/** Charity / tournament mulligan packs for a scramble. */
+export interface MulliganLedger {
+  /** Price per mulligan, whole currency units. */
+  price: number;
+  /** Mulligans bought per player id ('me' = this golfer). */
+  packs: Record<string, number>;
+  used: { player: string; hole: number; t: number }[];
+}
+
+export const mulligansLeft = (l: MulliganLedger, player: string) =>
+  (l.packs[player] ?? 0) - l.used.filter((u) => u.player === player).length;
+export const ledgerTotal = (l: MulliganLedger) => Object.values(l.packs).reduce((a, n) => a + n, 0) * l.price;
 
 export const FORMATS = ['Stroke Play', 'Match Play', 'Stableford', 'Scramble', 'Best Ball', 'Alt Shot'] as const;
 export type Format = (typeof FORMATS)[number];
@@ -28,6 +48,7 @@ export interface RoundState {
   shots: Shot[][];
   /** Server round id once the round is synced to the cloud (signed-in users only). */
   remoteId?: string;
+  ledger?: MulliganLedger;
 }
 
 export type RoundAction =
@@ -35,7 +56,9 @@ export type RoundAction =
   | { type: 'undo' }
   | { type: 'goto'; hole: number }
   | { type: 'next' }
-  | { type: 'start'; config: RoundConfig }
+  | { type: 'start'; config: RoundConfig; ledger?: MulliganLedger }
+  | { type: 'mulligan'; player: string }
+  | { type: 'unmulligan'; index: number }
   | { type: 'hydrate'; state: RoundState }
   | { type: 'attachRemote'; id: string };
 
@@ -67,6 +90,7 @@ export function isRoundState(x: unknown): x is RoundState {
   if (!['black', 'blue', 'white', 'red'].includes(r.config.tee) || !['18', 'front', 'back'].includes(r.config.length)) return false;
   const { start, end } = holeRange(r.config.length);
   if (r.remoteId !== undefined && typeof r.remoteId !== 'string') return false;
+  if (r.ledger !== undefined && !(r.ledger && Number.isFinite(r.ledger.price) && typeof r.ledger.packs === 'object' && Array.isArray(r.ledger.used))) return false;
   return (
     Number.isInteger(r.current) && r.current >= start && r.current <= end &&
     Array.isArray(r.shots) && r.shots.length === HOLES && r.shots.every(Array.isArray)
@@ -90,7 +114,12 @@ export function roundReducer(s: RoundState, a: RoundAction): RoundState {
     case 'next':
       return { ...s, current: Math.min(s.current + 1, end) };
     case 'start':
-      return newRound(a.config);
+      return { ...newRound(a.config), ...(a.ledger ? { ledger: a.ledger } : {}) };
+    case 'mulligan':
+      if (!s.ledger || mulligansLeft(s.ledger, a.player) <= 0) return s;
+      return { ...s, ledger: { ...s.ledger, used: [...s.ledger.used, { player: a.player, hole: s.current + 1, t: Date.now() }] } };
+    case 'unmulligan':
+      return s.ledger ? { ...s, ledger: { ...s.ledger, used: s.ledger.used.filter((_, i) => i !== a.index) } } : s;
     case 'hydrate':
       return a.state;
     case 'attachRemote':

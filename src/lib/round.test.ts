@@ -97,3 +97,20 @@ describe('tees', () => {
     expect(red[0].lies[0].pin).toBe(red[0].yards);
   });
 });
+
+describe('mulligan ledger', () => {
+  const cfg = { tee: 'blue' as const, format: 'Scramble' as const, length: '18' as const };
+  it('tracks packs, usage per player and total raised; refuses overdraw', async () => {
+    const { ledgerTotal, mulligansLeft } = await import('./round');
+    let s = roundReducer(newRound(), { type: 'start', config: cfg, ledger: { price: 10, packs: { me: 2, f1: 1 }, used: [] } });
+    expect(ledgerTotal(s.ledger!)).toBe(30);
+    s = roundReducer(s, { type: 'mulligan', player: 'f1' });
+    const again = roundReducer(s, { type: 'mulligan', player: 'f1' });
+    expect(again).toBe(s); // no mulligans left
+    expect(mulligansLeft(s.ledger!, 'f1')).toBe(0);
+    expect(s.ledger!.used[0]).toMatchObject({ player: 'f1', hole: 1 });
+    s = roundReducer(s, { type: 'unmulligan', index: 0 });
+    expect(mulligansLeft(s.ledger!, 'f1')).toBe(1);
+    expect(isRoundState(s)).toBe(true);
+  });
+});

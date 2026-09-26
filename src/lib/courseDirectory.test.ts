@@ -32,6 +32,12 @@ describe('nearbyCourses', () => {
     };
     const r = await nearbyCourses(ROCH, 50_000, f);
     expect(r.map((c) => [c.name, c.location])).toEqual([['Soldiers Field Golf Course', 'Rochester, Minnesota'], ['Somerby Golf Club', 'Byron']]);
+    // Default: strict 10-mile radius — Somerby (≈8 mi) stays, a 12-mile course is dropped.
+    const g: Fetch = async () => json([
+      { osm_type: 'way', osm_id: 3, lat: '44.05', lon: '-92.63', name: 'Somerby Golf Club', display_name: '', category: 'leisure', type: 'golf_course' },
+      { osm_type: 'way', osm_id: 4, lat: '44.18', lon: '-92.47', name: 'Far Away Golf Club', display_name: '', category: 'leisure', type: 'golf_course' },
+    ]);
+    expect((await nearbyCourses(ROCH, undefined, g)).map((c) => c.name)).toEqual(['Somerby Golf Club']);
   });
 
   it('falls back to Overpass, retries a busy server, then reports busy', async () => {

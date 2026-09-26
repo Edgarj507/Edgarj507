@@ -22,6 +22,20 @@ export interface SatelliteMapProps {
   labels: { target: string; toPin: string; recenter: string };
   /** Called when imagery can't be shown (no WebGL, blocked tiles, offline). */
   onFail: () => void;
+  /** Course Guardian: satellite off, high-contrast wireframe of the course, lower pixel density. */
+  guardian?: boolean;
+  /** Every hole's centre line, [lat, lng][] per hole, for the wireframe. */
+  holeLines?: [number, number][][];
+}
+
+function wireFeatures(lines: [number, number][][]): FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: lines.flatMap((path) => [
+      { type: 'Feature' as const, properties: { kind: 'hole' }, geometry: { type: 'LineString' as const, coordinates: path.map(([lat, lng]) => [lng, lat]) } },
+      { type: 'Feature' as const, properties: { kind: 'green' }, geometry: { type: 'Point' as const, coordinates: [path[path.length - 1][1], path[path.length - 1][0]] } },
+    ]),
+  };
 }
 
 const ll = (p: LatLng): [number, number] => [p.lng, p.lat];
@@ -55,7 +69,7 @@ function shotFeatures(ball: LatLng, aim: LatLng, pin: LatLng): FeatureCollection
   };
 }
 
-export default function SatelliteMap({ provider, bearing, holeKey, ball, aim, pin, fmt, labels, onFail }: SatelliteMapProps) {
+export default function SatelliteMap({ provider, bearing, holeKey, ball, aim, pin, fmt, labels, onFail, guardian = false, holeLines = [] }: SatelliteMapProps) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibre | null>(null);
   const targetMarker = useRef<Marker | null>(null);
@@ -117,6 +131,9 @@ export default function SatelliteMap({ provider, bearing, holeKey, ball, aim, pi
       m.addLayer({ id: 'aim', type: 'circle', source: 'shot', filter: ['==', ['get', 'kind'], 'aim'], paint: { 'circle-radius': 14, 'circle-color': 'rgba(16,185,129,0.12)', 'circle-stroke-color': '#34d399', 'circle-stroke-width': 2 } });
       m.addLayer({ id: 'ball', type: 'circle', source: 'shot', filter: ['==', ['get', 'kind'], 'ball'], paint: { 'circle-radius': 6, 'circle-color': '#ffffff', 'circle-stroke-color': '#000000', 'circle-stroke-width': 1.5 } });
       m.addLayer({ id: 'pin', type: 'circle', source: 'shot', filter: ['==', ['get', 'kind'], 'pin'], paint: { 'circle-radius': 5, 'circle-color': '#ef4444', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
+      m.addSource('wire', { type: 'geojson', data: wireFeatures(holeLines) });
+      m.addLayer({ id: 'wire-hole', type: 'line', source: 'wire', filter: ['==', ['get', 'kind'], 'hole'], layout: { visibility: 'none' }, paint: { 'line-color': '#34d399', 'line-width': 2, 'line-opacity': 0.8 } }, 'shot-line');
+      m.addLayer({ id: 'wire-green', type: 'circle', source: 'wire', filter: ['==', ['get', 'kind'], 'green'], layout: { visibility: 'none' }, paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 14, 4, 18, 26], 'circle-color': 'rgba(52,211,153,0.08)', 'circle-stroke-color': '#6ee7b7', 'circle-stroke-width': 1.5 } }, 'shot-line');
       frame(false);
       setReady(true);
     });
@@ -145,6 +162,20 @@ export default function SatelliteMap({ provider, bearing, holeKey, ball, aim, pi
     // Map instance is created once per provider; props flow through refs/effects below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider.id]);
+
+  // Course Guardian: no imagery requests, flat black + wireframe, 1× pixel ratio.
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !ready) return;
+    m.setLayoutProperty('satellite', 'visibility', guardian ? 'none' : 'visible');
+    for (const id of ['wire-hole', 'wire-green']) m.setLayoutProperty(id, 'visibility', guardian ? 'visible' : 'none');
+    m.setPaintProperty('bg', 'background-color', guardian ? '#000000' : '#0a0a0a');
+    m.setPixelRatio(guardian ? 1 : window.devicePixelRatio || 1);
+  }, [guardian, ready]);
+
+  useEffect(() => {
+    (map.current?.getSource('wire') as GeoJSONSource | undefined)?.setData(wireFeatures(holeLines));
+  }, [holeLines, ready]);
 
   // Update overlays as the lie / live pin changes.
   useEffect(() => {
@@ -193,7 +224,7 @@ export default function SatelliteMap({ provider, bearing, holeKey, ball, aim, pi
         ref={container}
         data-testid="satellite-map"
         // h-full/w-full, not inset-0: maplibre's CSS sets .maplibregl-map { position: relative }.
-        className="h-full w-full bg-neutral-950 [&_.maplibregl-canvas]:[filter:brightness(0.75)_contrast(1.25)_saturate(0.8)]"
+        className={`h-full w-full bg-neutral-950 ${guardian ? '' : '[&_.maplibregl-canvas]:[filter:brightness(0.75)_contrast(1.25)_saturate(0.8)]'}`}
       />
       {/* Vignette so floating glass widgets stay legible over bright imagery. */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/70" />

@@ -7,6 +7,10 @@ export interface Prefs {
   lang: Lang;
   units: Units;
   communityPins: boolean;
+  /** Speak yardages and club advice hands-free. */
+  voice: boolean;
+  /** Course Guardian: low-power high-contrast wireframe map (sun & battery saver). */
+  guardian: boolean;
   /** Language came from device detection (vs. chosen by the user). */
   langDetected: boolean;
 }
@@ -38,10 +42,10 @@ function load(): Prefs {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) ?? 'null');
     if (s && s.lang in LANGUAGES && (s.units === 'yards' || s.units === 'meters')) {
-      return { lang: s.lang, units: s.units, communityPins: s.communityPins !== false, langDetected: !!s.langDetected };
+      return { lang: s.lang, units: s.units, communityPins: s.communityPins !== false, voice: s.voice === true, guardian: s.guardian === true, langDetected: !!s.langDetected };
     }
   } catch { /* blocked or corrupt */ }
-  return { ...detectPrefs(), communityPins: true, langDetected: true };
+  return { ...detectPrefs(), communityPins: true, voice: false, guardian: false, langDetected: true };
 }
 
 /** Convert a yardage for display. All internal maths stays in yards. */

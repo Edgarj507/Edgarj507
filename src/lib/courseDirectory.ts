@@ -28,6 +28,9 @@ export type Fetch = typeof fetch;
 
 export const DEFAULT_LOCATION = { lat: 44.0121, lng: -92.4802, label: 'Rochester, MN' };
 
+/** Nearby list is strictly limited to 10 miles (keeps downloads/storage sane); search covers the rest. */
+export const NEARBY_RADIUS_M = 16_093;
+
 const env = (import.meta as { env?: Record<string, string | undefined> }).env ?? {};
 export const OVERPASS_URLS = (env.VITE_OVERPASS_URLS ?? 'https://overpass-api.de/api/interpreter').split(',').map((s) => s.trim()).filter(Boolean);
 export const NOMINATIM_URL = env.VITE_NOMINATIM_URL ?? 'https://nominatim.openstreetmap.org';
@@ -95,7 +98,8 @@ export function toSummaries(elements: OsmElement[], from: LatLng): CourseSummary
  * Named golf courses within `radiusM`, nearest first. Nominatim's bounded "golf course" search is
  * one cheap request; Overpass is the fallback (it's more complete but often overloaded).
  */
-export async function nearbyCourses(from: LatLng, radiusM = 50_000, fetchFn: Fetch = fetch, signal?: AbortSignal) {
+export async function nearbyCourses(from: LatLng, radiusM = NEARBY_RADIUS_M, fetchFn: Fetch = fetch, signal?: AbortSignal) {
+  const within = (list: CourseSummary[]) => list.filter((c) => (c.distanceM ?? Infinity) <= radiusM); // haversine, strict
   const dLat = radiusM / 111_320;
   const dLng = radiusM / (111_320 * Math.cos((from.lat * Math.PI) / 180));
   const viewbox = [from.lng - dLng, from.lat + dLat, from.lng + dLng, from.lat - dLat].map((n) => n.toFixed(4)).join(',');
@@ -103,14 +107,14 @@ export async function nearbyCourses(from: LatLng, radiusM = 50_000, fetchFn: Fet
     const res = await fetchFn(`${NOMINATIM_URL}/search?format=jsonv2&addressdetails=1&limit=50&bounded=1&viewbox=${viewbox}&q=golf+course`, { signal });
     if (res.ok) {
       const hits = ((await res.json()) as NominatimHit[]).filter((h) => h.category === 'leisure' && h.type === 'golf_course');
-      const list = toSummaries(hits.map(nominatimToOsm), from).filter((c) => (c.distanceM ?? 0) <= radiusM * 1.05);
+      const list = within(toSummaries(hits.map(nominatimToOsm), from));
       if (list.length) return list;
     }
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e;
   }
   const q = `[out:json][timeout:30];nwr["leisure"="golf_course"](around:${Math.round(radiusM)},${from.lat},${from.lng});out center tags;`;
-  return toSummaries((await overpass(q, fetchFn, signal)).elements, from);
+  return within(toSummaries((await overpass(q, fetchFn, signal)).elements, from));
 }
 
 interface NominatimHit {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { createSecureStore } from './secureStore';
-import { isRoundState, newRound, roundReducer } from './round';
+import { isRoundState, newRound, roundReducer, type Outcome } from './round';
 import type { Club } from './caddie';
 import { deriveBag, EMPTY_GEAR, type GearSelection } from './bag';
 
@@ -86,4 +86,26 @@ export function useBag() {
     setOverrides((o) => ({ ...o, [key]: Math.max(5, Math.min(400, Math.round(carry))) }));
   const resetCarry = (key: string) => setOverrides(({ [key]: _drop, ...rest }) => rest);
   return { bag, gear, setGear, setCarry, resetCarry };
+}
+
+// ── Club stats: shot outcomes per club, accumulated across rounds (dispersion & gapping). ──
+export type ClubStats = Record<string, Partial<Record<Outcome, number>>>;
+const STATS_KEY = 'eg.clubstats.v1';
+const isStats = (x: unknown): x is ClubStats =>
+  !!x && typeof x === 'object' && !Array.isArray(x) &&
+  Object.values(x as object).every((v) => v && typeof v === 'object' && Object.values(v).every((n) => Number.isInteger(n) && (n as number) >= 0));
+
+export function useClubStats() {
+  const [stats, setStats] = useLocalJson<ClubStats>(STATS_KEY, {}, isStats);
+  const record = (club: string, outcome: Outcome) =>
+    setStats((s) => ({ ...s, [club]: { ...s[club], [outcome]: (s[club]?.[outcome] ?? 0) + 1 } }));
+  return { stats, record };
+}
+
+/** Dominant miss for a club, e.g. "right" when ≥40% of ≥5 shots finish right. */
+export function tendency(s: Partial<Record<Outcome, number>> | undefined): { total: number; miss: Outcome | null; centerPct: number } {
+  const total = Object.values(s ?? {}).reduce((a, n) => a + (n ?? 0), 0);
+  if (!total) return { total: 0, miss: null, centerPct: 0 };
+  const misses = (['left', 'right', 'long', 'short'] as Outcome[]).map((o) => [o, s?.[o] ?? 0] as const).sort((a, b) => b[1] - a[1]);
+  return { total, miss: total >= 5 && misses[0][1] / total >= 0.4 ? misses[0][0] : null, centerPct: Math.round(((s?.center ?? 0) / total) * 100) };
 }

@@ -253,7 +253,7 @@ export function CourseSetup({ onBack, onDone, signedIn }: { onBack: () => void; 
 
         <section>
           <h3 className="mb-2 flex items-center gap-2 pl-1 text-[10px] font-bold uppercase tracking-widest text-white/50">
-            <MapPin size={11} /> {t('courses.nearby')} {!nearby && !nearbyErr && <Loader2 size={11} className="animate-spin" />}
+            <MapPin size={11} /> {t('courses.nearby')} <span className="font-mono normal-case tracking-normal text-white/35">· {units === 'meters' ? '≤ 16 km' : '≤ 10 mi'}</span> {!nearby && !nearbyErr && <Loader2 size={11} className="animate-spin" />}
           </h3>
           {nearbyErr && (
             <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-[11px] text-amber-200">
@@ -262,7 +262,8 @@ export function CourseSetup({ onBack, onDone, signedIn }: { onBack: () => void; 
             </div>
           )}
           {!nearby && !nearbyErr && Array.from({ length: 5 }, (_, i) => <div key={i} className="mb-2 h-[58px] animate-pulse rounded-xl border border-white/5 bg-white/5" />)}
-          <div className="flex flex-col gap-2">{nearby?.slice(0, 25).map(card)}</div>
+          {nearby && !nearby.length && <p className="px-1 text-[11px] text-white/45">{t('courses.noneNearby')}</p>}
+          <div className="flex flex-col gap-2">{nearby?.map(card)}</div>
         </section>
 
         {lib.courses.length > 1 && (

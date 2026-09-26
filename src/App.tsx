@@ -13,7 +13,9 @@ import { useCourses } from './courses/CourseLibrary';
 import { CourseSetup } from './views/CourseSetup';
 import { FORMATS, hasStrokes, holeRange, sameConfig, type Format, type RoundConfig, type RoundLength } from './lib/round';
 import { mockPartnerScore, summarize } from './lib/scoring';
-import { useBag, useRound } from './lib/hooks';
+import { useBag, useClubStats, useRound } from './lib/hooks';
+import { RoundRecap } from './views/RoundRecap';
+import { lieFor } from './data/course';
 import { useAuth, type Visibility } from './auth/AuthContext';
 import { SignIn } from './views/SignIn';
 import { ProfileView, VisibilityPicker } from './views/Profile';
@@ -31,7 +33,7 @@ const FORMAT_HELP: Record<Format, string> = {
 };
 const NEEDS_PARTNER: Format[] = ['Match Play', 'Best Ball'];
 
-type View = 'menu' | 'course' | 'courses' | 'invite' | 'bag' | 'friends' | 'hud' | 'scorecard' | 'profile' | 'settings';
+type View = 'menu' | 'course' | 'courses' | 'invite' | 'bag' | 'friends' | 'hud' | 'scorecard' | 'recap' | 'profile' | 'settings';
 
 const MOCK_DATA = {
   friends: {
@@ -63,7 +65,10 @@ export default function App() {
     length: '18' as RoundLength,
     tournamentMode: false,
     visibility: null as Visibility | null, // null → profile default
-    selectedFriends: [] as string[]
+    selectedFriends: [] as string[],
+    // Tournament Scramble: charity mulligan packs per player ('me' + buddy ids) and price each.
+    packs: {} as Record<string, number>,
+    mulliganPrice: 10,
   });
   const auth = useAuth();
   const { t, d, u } = usePrefs();
@@ -81,11 +86,16 @@ export default function App() {
     visibility: roundVisibility,
   });
   const { bag, gear, setGear, setCarry, resetCarry } = useBag();
+  const clubStats = useClubStats();
 
   const startRound = () => {
     if (hasStrokes(round) && sameConfig(round.config, setupConfig)) return setCurrentView('hud');
     if (hasStrokes(round) && !window.confirm('Start a new round with these settings? Current scores will be cleared.')) return;
-    dispatch({ type: 'start', config: setupConfig });
+    const packs = Object.fromEntries(
+      Object.entries(courseSetup.packs).filter(([id, n]) => n > 0 && (id === 'me' || courseSetup.selectedFriends.includes(id))),
+    );
+    const ledger = setupConfig.format === 'Scramble' && Object.keys(packs).length ? { price: courseSetup.mulliganPrice, packs, used: [] } : undefined;
+    dispatch({ type: 'start', config: setupConfig, ledger });
     setCurrentView('hud');
   };
 
@@ -367,6 +377,42 @@ export default function App() {
             </p>
           </div>
 
+          {courseSetup.format === 'Scramble' && (
+            <div className="flex flex-col gap-2 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] p-3 backdrop-blur-md">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wide text-amber-200">{t('setup.scramble')}</span>
+                <span className="font-mono text-[11px] text-amber-200/80">
+                  ${Object.entries(courseSetup.packs).filter(([id]) => id === 'me' || courseSetup.selectedFriends.includes(id)).reduce((a, [, n]) => a + n, 0) * courseSetup.mulliganPrice}
+                </span>
+              </div>
+              <p className="text-[9px] leading-snug text-white/50">{t('setup.scramble.sub')}</p>
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-white/40">{t('setup.price')}</span>
+                <div role="radiogroup" aria-label={t('setup.price')} className="flex gap-1">
+                  {[5, 10, 20].map(p => (
+                    <button key={p} role="radio" aria-checked={courseSetup.mulliganPrice === p} onClick={() => setCourseSetup({ ...courseSetup, mulliganPrice: p })}
+                      className={`rounded-full border px-2.5 py-0.5 font-mono text-[10px] ${courseSetup.mulliganPrice === p ? 'border-amber-300/60 bg-amber-300/15 text-amber-200' : 'border-white/10 text-white/50'}`}>${p}</button>
+                  ))}
+                </div>
+              </div>
+              <span className="text-[9px] font-bold uppercase tracking-widest text-white/40">{t('setup.packs')}</span>
+              {[{ id: 'me', name: t('card.you') }, ...courseSetup.selectedFriends.map(id => ({ id, name: MOCK_DATA.friends.network.find(f => f.id === id)?.name ?? id }))].map(p => {
+                const n = courseSetup.packs[p.id] ?? 0;
+                const setN = (v: number) => setCourseSetup({ ...courseSetup, packs: { ...courseSetup.packs, [p.id]: Math.max(0, Math.min(6, v)) } });
+                return (
+                  <div key={p.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-black/30 px-3 py-1.5">
+                    <span className="text-[11px] font-semibold text-white/80">{p.name}</span>
+                    <span className="flex items-center gap-2">
+                      <button onClick={() => setN(n - 1)} aria-label={`Fewer mulligans for ${p.name}`} className="grid h-6 w-6 place-items-center rounded-full bg-white/10 text-white/70">−</button>
+                      <span className="w-4 text-center font-mono text-xs text-amber-200">{n}</span>
+                      <button onClick={() => setN(n + 1)} aria-label={`More mulligans for ${p.name}`} className="grid h-6 w-6 place-items-center rounded-full bg-white/10 text-white/70">+</button>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           <div className="flex flex-col gap-2">
             <span className="text-[10px] text-white/50 uppercase font-bold tracking-widest pl-1">{t('setup.visibility')}</span>
             <VisibilityPicker label="Round visibility" value={roundVisibility} onChange={v => setCourseSetup({ ...courseSetup, visibility: v })} />
@@ -565,7 +611,7 @@ export default function App() {
 
   return (
     <div className="h-dvh w-full bg-black font-sans selection:bg-emerald-500/30 desktop:flex desktop:items-center desktop:justify-center desktop:bg-zinc-950 desktop:p-4">
-      <div className="relative h-full w-full overflow-hidden bg-black desktop:aspect-[9/19.5] desktop:h-[min(860px,calc(100dvh-2rem))] desktop:w-auto desktop:rounded-[3rem] desktop:border-[8px] desktop:border-zinc-900 desktop:shadow-[0_0_50px_rgba(0,0,0,0.5)]">
+      <div className="relative h-full w-full overflow-hidden bg-black desktop:aspect-[9/16] desktop:h-[min(860px,calc(100dvh-2rem))] desktop:w-auto desktop:rounded-[3rem] desktop:border-[8px] desktop:border-zinc-900 desktop:shadow-[0_0_50px_rgba(0,0,0,0.5)]">
         {gated ? (
           <>
             <div className="absolute inset-0 z-0">
@@ -585,12 +631,20 @@ export default function App() {
             format={round.config.format}
             isLastHole={round.current === range.end}
             bag={bag}
-            onLog={shot => dispatch({ type: 'log', shot })}
+            onLog={shot => {
+              dispatch({ type: 'log', shot });
+              if (shot.outcome) clubStats.record(shot.club, shot.outcome);
+            }}
+            holeLines={activeCourse.data.holes.map(h => h.path)}
+            clubStats={clubStats.stats}
+            ledger={round.ledger}
+            onMulligan={player => dispatch({ type: 'mulligan', player })}
+            onUnmulligan={index => dispatch({ type: 'unmulligan', index })}
             onUndo={() => dispatch({ type: 'undo' })}
             onNext={() => {
               if (round.current !== range.end) return dispatch({ type: 'next' });
               void sync.flush(round.current);
-              setCurrentView('scorecard');
+              setCurrentView('recap');
             }}
             sync={sync.status}
             remoteRoundId={round.remoteId}
@@ -623,6 +677,23 @@ export default function App() {
                     if (id) setCourseSetup(s => ({ ...s, courseId: id }));
                     setCurrentView('course');
                   }}
+                />
+              )}
+              {currentView === 'recap' && (
+                <RoundRecap
+                  courseName={activeCourse.name}
+                  holes={rangeIdx.map(i => ({
+                    number: roundHoles[i].number,
+                    par: roundHoles[i].par,
+                    startYds: round.shots[i].map((_, k) => lieFor(roundHoles[i], k).pin),
+                    shots: round.shots[i],
+                  }))}
+                  scoreLabel={scoreRound(false).headline}
+                  ledger={round.ledger}
+                  players={[{ id: 'me', name: t('card.you') }, ...liveBuddies.map(b => ({ id: b.id, name: b.name.split(' ')[0] }))]}
+                  handle={auth.status === 'signedIn' ? `@${auth.profile.handle}` : '@Exclusive.Golf'}
+                  onScorecard={() => setCurrentView('scorecard')}
+                  onDone={() => setCurrentView('menu')}
                 />
               )}
               {currentView === 'scorecard' && (

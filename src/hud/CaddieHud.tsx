@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, Aperture, Check, ChevronLeft, BadgeCheck, ChevronRight, Cloud, CloudOff, Flag, Users, Mountain, RotateCcw, Thermometer } from 'lucide-react';
+import { ArrowDown, ArrowUp, Aperture, Check, ChevronLeft, BadgeCheck, ChevronRight, Cloud, CloudOff, Flag, HandCoins, Users, RotateCcw, ShieldHalf, Volume2, VolumeX } from 'lucide-react';
 import { MapPlaceholder } from './MapPlaceholder';
 import { imageryProvider } from '../map/providers';
 import { aimPosition, ballPosition, holeGeometry, shotBearing } from '../map/geometry';
@@ -13,11 +13,15 @@ import { lieFor, type Hole, type TeeId } from '../data/course';
 import { usePrefs } from '../i18n/prefs';
 import { usePinFeed } from '../lib/pinFeed';
 import { bearingDeg, distanceM, liveDistance } from '../../supabase/functions/_shared/pins.ts';
-import type { Format, Shot } from '../lib/round';
+import { mulligansLeft, type Format, type MulliganLedger, type Outcome, type Shot } from '../lib/round';
+import { ShotModal } from './ShotModal';
+import { MulliganSheet } from './MulliganSheet';
+import { caddiePhrase, speak, speechAvailable } from '../lib/voiceCaddie';
+import type { ClubStats } from '../lib/hooks';
 import type { SyncStatus } from '../lib/sync';
 
 // Mock weather feed (replace with weather API).
-const WEATHER = { tempF: 72, windMph: 12, windFromDeg: 225 };
+const WEATHER = { tempF: 72, windMph: 12, windFromDeg: 225, rainPct: 20, uv: 6 };
 
 export interface Buddy { id: string; name: string; liveScore: string }
 
@@ -42,6 +46,13 @@ interface Props {
   courseAttribution: string;
   /** Server round id, enabling the live community pin network. */
   remoteRoundId?: string;
+  /** Every hole's centre line (Course Guardian wireframe). */
+  holeLines?: [number, number][][];
+  clubStats?: ClubStats;
+  /** Scramble charity ledger, when mulligan packs were sold. */
+  ledger?: MulliganLedger;
+  onMulligan?: (player: string) => void;
+  onUnmulligan?: (index: number) => void;
 }
 
 const M_TO_YD = 1.09361;
@@ -56,9 +67,13 @@ const scoreColor = (s: string) => (s.startsWith('-') ? 'text-red-400' : s === 'E
 
 export function CaddieHud({
   hole, tee, strokes, roundScore, format, isLastHole, bag, onLog, onUndo, onNext, onScorecard, onExit, buddies = [], tournamentMode = false, sync = 'off', remoteRoundId, courseName, courseAttribution,
+  holeLines, clubStats = {}, ledger, onMulligan, onUnmulligan,
 }: Props) {
   const [justLogged, setJustLogged] = useState(false);
   const [puttView, setPuttView] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [mullOpen, setMullOpen] = useState(false);
+  const [ballBy, setBallBy] = useState('me');
 
   useEffect(() => {
     if (!justLogged) return;
@@ -66,7 +81,7 @@ export function CaddieHud({
     return () => clearTimeout(id);
   }, [justLogged]);
 
-  const { t, d, u, units, communityPins } = usePrefs();
+  const { t, d, u, units, lang, communityPins, voice, guardian, set } = usePrefs();
   const lie = lieFor(hole, strokes);
   const conditions: Conditions = { ...WEATHER, elevationDeltaYds: lie.elev };
 
@@ -106,15 +121,41 @@ export function CaddieHud({
   const club = lie.pin <= 20 ? bag.find((c) => c.carry === 0) ?? recommendClub(target, bag) : recommendClub(target, bag.filter((c) => c.carry > 0));
   const arrowDeg = windArrowDeg(WEATHER.windFromDeg, playBearing);
 
+  const players = useMemo(() => [{ id: 'me', name: t('card.you') }, ...buddies.map((b) => ({ id: b.id, name: b.name.split(' ')[0] }))], [buddies, t]);
+  const isScramble = format === 'Scramble';
+
   const logShot = () => {
     if (justLogged || !club) return;
-    onLog({ club: club.label, line: lineYds, playsLike: target, t: Date.now() });
+    setPicking(true);
+  };
+  const commitShot = (outcome: Outcome | undefined) => {
+    if (!club) return;
+    setPicking(false);
+    onLog({ club: club.label, line: lineYds, playsLike: target, t: Date.now(), ...(outcome ? { outcome } : {}), ...(isScramble ? { by: ballBy } : {}) });
     setJustLogged(true);
     navigator.vibrate?.(15);
   };
 
+  // AI voice caddie: announce the numbers whenever the lie changes (new shot or hole).
+  const phrase = caddiePhrase({ pin: d(pinYds), line: d(lineYds), playsLike: tournamentMode ? null : d(target), club: club?.label, unit: units, lang });
+  useEffect(() => {
+    if (!voice) return;
+    const id = setTimeout(() => speak(phrase, lang), 500);
+    return () => clearTimeout(id);
+    // Speak on lie changes, not on every re-render of the same numbers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voice, hole.number, strokes]);
+  const toggleVoice = () => {
+    const next = !voice;
+    set({ voice: next });
+    if (next) speak(phrase, lang);
+    else if (speechAvailable()) window.speechSynthesis.cancel();
+  };
+
+  const mullLeft = ledger ? players.reduce((a, p) => a + Math.max(0, mulligansLeft(ledger, p.id)), 0) : 0;
+
   return (
-    <div className="relative h-full w-full overflow-hidden text-white select-none">
+    <div className={`relative h-full w-full overflow-hidden text-white select-none ${guardian ? 'eg-guardian' : ''}`}>
       {/* Layer 0: live satellite map (gestures reach it wherever no widget sits above). */}
       {mapFailed || !PROVIDER ? (
         <>
@@ -136,14 +177,17 @@ export function CaddieHud({
             fmt={fmtMeters}
             labels={mapLabels}
             onFail={() => setMapFailed(true)}
+            guardian={guardian}
+            holeLines={holeLines}
           />
         </Suspense>
       )}
 
       {/* ── Top overlays ── */}
       <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-3 pt-safe pl-safe pr-safe">
-        {/* Top-left: hole / par / strokes */}
-        <div className="pointer-events-auto flex items-start gap-2">
+        {/* Top-left: hole / par / strokes, distance to pin below */}
+        <div className="pointer-events-auto flex flex-col items-start gap-1.5">
+        <div className="flex items-start gap-2">
           <button
             onClick={onExit}
             aria-label="Exit round"
@@ -186,41 +230,8 @@ export function CaddieHud({
             </dl>
           </button>
         </div>
-
-        {/* Top-right: weather → elevation → distance to pin */}
-        <div className="pointer-events-auto flex min-w-0 max-w-[7.5rem] shrink-0 flex-col items-end gap-1.5">
-          <div className={`${glass} flex flex-col gap-1.5 rounded-2xl px-3 py-2`}>
-            <span className="flex items-center justify-end gap-1.5 font-mono text-sm font-semibold leading-none tabular-nums">
-              <Thermometer size={12} className="text-amber-300" />
-              {WEATHER.tempF}°F
-            </span>
-            <span className="h-px bg-white/10" />
-            <span className="flex items-center justify-end gap-1.5" title="Wind relative to target line (up = helping)">
-              <ArrowUp size={13} className="text-sky-300 transition-transform" style={{ transform: `rotate(${arrowDeg}deg)` }} />
-              <span className="font-mono text-sm font-semibold leading-none tabular-nums">
-                {WEATHER.windMph}
-                <span className="ml-0.5 text-[9px] font-bold uppercase text-white/50">mph</span>
-              </span>
-            </span>
-          </div>
-
-          {!tournamentMode && (
-            <div className={`${glass} flex items-center gap-1.5 rounded-xl px-2.5 py-1.5`} title="Target elevation vs. ball">
-              <Mountain size={12} className="text-white/60" />
-              {lie.elev !== 0 && (lie.elev > 0
-                ? <ArrowUp size={11} className="text-rose-300" />
-                : <ArrowDown size={11} className="text-sky-300" />)}
-              <span className="font-mono text-xs font-semibold leading-none tabular-nums">
-                {d(Math.abs(lie.elev))}<span className="text-white/50">{u}</span>
-              </span>
-              <span className="text-[9px] font-bold uppercase leading-none tracking-wider text-white/50">
-                {t(lie.elev > 0 ? 'hud.up' : lie.elev < 0 ? 'hud.down' : 'hud.flat')}
-              </span>
-            </div>
-          )}
-
           <div
-            className={`${glass} flex flex-col items-end gap-1 rounded-xl px-2.5 py-1.5`}
+            className={`${glass} ml-12 flex flex-col items-start gap-1 rounded-xl px-2.5 py-1.5`}
             aria-label={`${t('hud.pin')} ${d(pinYds)}${u}. ${pins.live ? `${t('hud.communityPin')}: ${pinNote.join(', ')}, ${pins.live.reports} ${t('hud.reports')}` : t('hud.defaultPin')}`}
           >
             <span className="flex items-center gap-1.5">
@@ -229,6 +240,12 @@ export function CaddieHud({
                 {d(pinYds)}<span className="text-white/50">{u}</span>
               </span>
               <span className="text-[9px] font-bold uppercase leading-none tracking-wider text-white/50">{t('hud.pin')}</span>
+              {!tournamentMode && lie.elev !== 0 && (
+                <span className="flex items-center gap-0.5 border-l border-white/15 pl-1.5 font-mono text-[10px] text-white/70" title="Target elevation vs. ball">
+                  {lie.elev > 0 ? <ArrowUp size={10} className="text-rose-300" /> : <ArrowDown size={10} className="text-sky-300" />}
+                  {d(Math.abs(lie.elev))}{u}
+                </span>
+              )}
             </span>
             {pins.live && (
               <span className="flex items-start gap-1 text-[8px] font-semibold leading-tight text-emerald-300/80" title={`${t('hud.communityPin')} · ${pins.live.reports} ${t('hud.reports')}`}>
@@ -237,13 +254,48 @@ export function CaddieHud({
                   <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
                 </span>
                 <Users size={9} className="mt-px shrink-0" />
-                <span className="flex flex-col items-end">
+                <span className="flex flex-col items-start">
                   {pinNote.map((part) => <span key={part} className="whitespace-nowrap">{part}</span>)}
                 </span>
                 {pins.live.status === 'verified' && <BadgeCheck size={9} className="mt-px shrink-0 text-emerald-400" />}
               </span>
             )}
           </div>
+        </div>
+
+
+        {/* Top-right: two compact pills (weather · conditions) + HUD toggles */}
+        <div className="pointer-events-auto flex shrink-0 flex-col items-end gap-1.5">
+          <div className={`${glass} flex items-center gap-2 rounded-full px-2.5 py-1 font-mono text-[11px] font-semibold tabular-nums`} aria-label="Weather">
+            <span>{WEATHER.tempF}°</span>
+            <span className="h-3 w-px bg-white/20" />
+            <span className="flex items-center gap-1" title="Wind relative to target line (up = helping)">
+              <ArrowUp size={11} className="text-sky-300 transition-transform" style={{ transform: `rotate(${arrowDeg}deg)` }} />
+              {WEATHER.windMph}<span className="text-[8px] text-white/50">MPH</span>
+            </span>
+          </div>
+          <div className={`${glass} flex items-center gap-2 rounded-full px-2.5 py-1 font-mono text-[11px] font-semibold tabular-nums`} aria-label="Conditions">
+            <span title={t('hud.rain')}><span aria-hidden>☔️</span> {WEATHER.rainPct}%</span>
+            <span className="h-3 w-px bg-white/20" />
+            <span title={t('hud.uv')}><span className="text-[8px] text-amber-300">UV</span> {WEATHER.uv}</span>
+          </div>
+          <div className="flex gap-1.5">
+            {speechAvailable() && (
+              <button onClick={toggleVoice} aria-pressed={voice} aria-label={t('hud.voice')} title={t('hud.voice')}
+                className={`${glass} grid h-8 w-8 place-items-center rounded-full ${voice ? 'text-emerald-400 ring-1 ring-emerald-400/60' : 'text-white/60'}`}>
+                {voice ? <Volume2 size={14} /> : <VolumeX size={14} />}
+              </button>
+            )}
+            <button onClick={() => set({ guardian: !guardian })} aria-pressed={guardian} aria-label={t('hud.guardian')} title={t('hud.guardian')}
+              className={`${glass} grid h-8 w-8 place-items-center rounded-full ${guardian ? 'text-amber-300 ring-1 ring-amber-300/60' : 'text-white/60'}`}>
+              <ShieldHalf size={14} />
+            </button>
+          </div>
+          {ledger && (
+            <button onClick={() => setMullOpen(true)} className={`${glass} flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold text-amber-200`}>
+              <HandCoins size={12} /> {mullLeft} {t('mull.left')}
+            </button>
+          )}
         </div>
       </header>
 
@@ -320,6 +372,21 @@ export function CaddieHud({
         </div>
       </div>
 
+      {picking && club && (
+        <ShotModal
+          club={club.label.replace(/^(\S+) [\d.]+°$/, '$1')}
+          target={`${d(target)}${u}`}
+          stats={clubStats[club.label]}
+          players={isScramble ? players : undefined}
+          by={ballBy}
+          onBy={setBallBy}
+          onPick={commitShot}
+          onClose={() => setPicking(false)}
+        />
+      )}
+      {mullOpen && ledger && onMulligan && onUnmulligan && (
+        <MulliganSheet ledger={ledger} players={players} onUse={onMulligan} onUndo={onUnmulligan} onClose={() => setMullOpen(false)} />
+      )}
       {puttView && (
         <PuttView lie={{ ...lie, pin: pinYds }} holeNumber={hole.number} onClose={() => setPuttView(false)} onConfirmCup={pins.report} />
       )}
