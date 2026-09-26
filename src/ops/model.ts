@@ -7,6 +7,7 @@ import { DEFAULT_CARTS, nearestCart, type BevCart } from './carts';
 import { cleanText, validBroadcast, validMessage, type Broadcast, type ChatMessage, type SosAlert } from './comms';
 import { normalizeEvent, validateEvent, validateVerification, type CourseVerification, type TournamentEvent } from './venues';
 import { EVENTS } from '../tournaments/events';
+import { canCancel, cleanPricing, DEFAULT_PRICING, quote, teeAt, teeTimes, validatePricing, type Holes, type TeePricing, type Transport } from './teetimes';
 
 /** player = golfer app; staff = Clubhouse OS; organizer = Tournament OS; admin = Exclusive.Golf (verifications). */
 export type Role = 'player' | 'staff' | 'organizer' | 'admin';
@@ -99,6 +100,11 @@ export interface TeeBooking {
   email: string;
   source: 'phone' | 'walkup' | 'app' | 'staff';
   note?: string;
+  /** Golfer app reservations: round configuration and the server-computed price. */
+  holes?: Holes;
+  transport?: Transport;
+  total?: number;
+  bookedAt?: number;
 }
 
 export const BLOCK_REASONS = ['Maintenance', 'Private Event', 'Tournament', 'Season Closed', 'Irrigation repair', 'Weather', 'League', 'Other'] as const;
@@ -117,7 +123,9 @@ export interface OpsState { v: 1; settings: OpsSettings; orders: Order[]; regist
   menu: StoreItem[]; carts: BevCart[]; messages: ChatMessage[]; broadcasts: Broadcast[]; sos: SosAlert[];
   events: TournamentEvent[]; verifications: CourseVerification[];
   /** In-app "shared with you" event invites between friends (by handle). */
-  shares: EventShare[] }
+  shares: EventShare[];
+  /** Tee-time rates, cart fees and course policies (Clubhouse OS → golfer booking). */
+  pricing: TeePricing }
 
 export interface EventShare { id: string; eventId: string; fromName: string; toHandle: string; at: number; seen?: boolean }
 
@@ -146,7 +154,7 @@ export const SEED_EVENTS: TournamentEvent[] = [
 export const initialOps = (): OpsState => ({
   v: 1, settings: { ...DEFAULT_SETTINGS }, orders: [], registrations: [], teeSheet: [], teeBlocks: [], positions: [], eventDetails: {}, tickets: [],
   menu: DEFAULT_MENU.map((m) => ({ ...m })), carts: DEFAULT_CARTS.map((c) => ({ ...c })), messages: [], broadcasts: [], sos: [],
-  events: SEED_EVENTS.map((e) => ({ ...e })), verifications: [], shares: [],
+  events: SEED_EVENTS.map((e) => ({ ...e })), verifications: [], shares: [], pricing: structuredClone(DEFAULT_PRICING),
 });
 
 /** Charity mulligans are sold only during a live in-house tournament. */
@@ -193,10 +201,15 @@ export type OpsAction =
   /** Live telemetry: accepted only during a live event and only on the property (+250 ft). */
   | { type: 'ping'; pos: LivePosition }
   /** Kill switch: sever a player's broadcast (left the property, event over, app closed). */
-  | { type: 'unping'; phone: string };
+  | { type: 'unping'; phone: string }
+  /** Golfer books an open tee time in the app (price recomputed here, not trusted). */
+  | { type: 'reserve'; booking: TeeBooking }
+  /** Golfer cancels their own app reservation inside the free-cancellation window. */
+  | { type: 'cancelTee'; id: string; phone: string }
+  | { type: 'pricing'; pricing: TeePricing }; // staff
 
 const STAFF_ONLY = new Set<OpsAction['type']>(['setting', 'status', 'book', 'unbook', 'block', 'unblock', 'editBlock', 'ticketStatus',
-  'menuUpsert', 'menuRemove', 'cartUpdate', 'assignCart', 'sosStatus']);
+  'menuUpsert', 'menuRemove', 'cartUpdate', 'assignCart', 'sosStatus', 'pricing']);
 /** Actions tournament organizers may also take (their event's CRM, page, announcements). */
 const STAFF_OR_ORGANIZER = new Set<OpsAction['type']>(['eventDetails', 'setPaid', 'checkIn', 'broadcast', 'eventUpsert', 'eventRemove', 'activeEvent']);
 const ADMIN_ONLY = new Set<OpsAction['type']>(['verifyDecision']);
@@ -434,6 +447,36 @@ export function opsReducer(s: OpsState, a: OpsAction, role: Role): OpsState {
     }
     case 'unbook':
       return { ...s, teeSheet: s.teeSheet.filter((b) => b.id !== a.id) };
+    case 'reserve': {
+      const b = a.booking, p = s.pricing, now = Date.now();
+      const phone = normalizePhone(b.phone);
+      if (!phone || !DATE.test(b.date) || !validateBooking(b).ok) return s;
+      if (!teeTimes(s.settings.courseHours, p.interval).includes(b.time)) return s; // not a real tee time
+      const at = teeAt(b.date, b.time);
+      if (at < now || at - now > (p.bookingWindowDays + 1) * 86_400_000) return s; // past / beyond the booking window
+      if (s.teeSheet.some((x) => x.date === b.date && x.time === b.time) || blockFor(s.teeBlocks, b.date, b.time)) return s;
+      const holes: Holes = b.holes === 'front9' || b.holes === 'back9' ? b.holes : '18';
+      const transport: Transport = b.transport === 'walk' && p.walking ? 'walk' : 'ride';
+      if (b.transport === 'walk' && !p.walking) return s;
+      const upcoming = s.teeSheet.filter((x) => x.phone === phone && teeAt(x.date, x.time) >= now).length;
+      if (upcoming >= p.maxUpcoming) return s;
+      const clean: TeeBooking = {
+        id: b.id, date: b.date, time: b.time, status: 'reserved', name: sanitizeText(b.name, 40), size: b.size, phone, email: b.email.trim().toLowerCase(),
+        source: 'app', holes, transport, total: quote(p, b.date, b.time, holes, transport, b.size).total, bookedAt: now,
+        note: b.note ? sanitizeText(b.note, 80) || undefined : undefined,
+      };
+      return { ...s, teeSheet: [...s.teeSheet, clean] };
+    }
+    case 'cancelTee': {
+      const b = s.teeSheet.find((x) => x.id === a.id);
+      const phone = normalizePhone(a.phone);
+      if (!b || !phone || b.phone !== phone || b.source !== 'app' || !canCancel(s.pricing, b.date, b.time, Date.now())) return s;
+      return { ...s, teeSheet: s.teeSheet.filter((x) => x.id !== a.id) };
+    }
+    case 'pricing': {
+      if (!validatePricing(a.pricing).ok) return s;
+      return { ...s, pricing: cleanPricing(a.pricing) };
+    }
     case 'ping': {
       const phone = normalizePhone(a.pos.phone);
       if (!phone) return s;
@@ -521,6 +564,7 @@ export function inverseOf(s: OpsState, a: OpsAction): OpsAction | null {
       return o && o.status !== a.status && o.status !== 'cancelled' ? { type: 'status', id: a.id, status: o.status } : null;
     }
     case 'book': return { type: 'unbook', id: a.booking.id };
+    case 'pricing': return { type: 'pricing', pricing: s.pricing };
     case 'unbook': { const b = s.teeSheet.find((x) => x.id === a.id); return b ? { type: 'book', booking: b } : null; }
     case 'block': return { type: 'unblock', id: a.block.id };
     case 'unblock': { const k = s.teeBlocks.find((x) => x.id === a.id); return k ? { type: 'block', block: k } : null; }

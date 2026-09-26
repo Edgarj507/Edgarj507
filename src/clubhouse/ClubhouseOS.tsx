@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { haptic } from '../lib/haptics';
-import { Bug, CalendarClock, Car, ChefHat, CloudLightning, Megaphone, MessageSquareText, Package, PhoneIncoming, ChevronRight, CircleHelp, History, LayoutDashboard, LifeBuoy, Lock, MapPinOff, Radar, Receipt, RotateCcw, Settings2, ShieldCheck, Trophy, Truck, X, type LucideIcon } from 'lucide-react';
+import { BadgeDollarSign, Bug, CalendarClock, Car, ChefHat, CloudLightning, Megaphone, MessageSquareText, Package, PhoneIncoming, ChevronRight, CircleHelp, History, LayoutDashboard, LifeBuoy, Lock, MapPinOff, Radar, Receipt, RotateCcw, Settings2, ShieldCheck, Trophy, Truck, X, type LucideIcon } from 'lucide-react';
 import { SOMERBY } from '../data/course';
 import { useOps } from '../ops/useOps';
 import { charityOpen, isOpenAt, isOpenOrder } from '../ops/model';
@@ -19,6 +19,7 @@ import { BevCartView } from './everyday/BevCartView';
 import { MessagesView, threadsOf } from './everyday/MessagesView';
 import { BroadcastsView } from './everyday/BroadcastsView';
 import { StoreManager } from './everyday/StoreManager';
+import { PricingPolicies } from './everyday/PricingPolicies';
 import { PhoneOrderModal } from './everyday/PhoneOrderModal';
 import { WeatherHub } from '../weather/WeatherHub';
 import { SosAlarm } from './SosAlarm';
@@ -36,8 +37,8 @@ import { Queue } from './Queue';
 import { ago, glass, hhmm } from './ui';
 import { useUndo } from './useUndo';
 
-type View = 'tee' | 'eod' | 'settings' | 'support' | 'tournament' | 'ops' | 'carts' | 'messages' | 'broadcasts' | 'store' | 'weather';
-const LABEL: Partial<Record<View, string>> = { tee: 'Tee Sheet', eod: 'End of Day', support: 'Support Tickets', settings: 'Settings', carts: 'Beverage Carts', messages: 'Messages', broadcasts: 'Broadcasts', store: 'Store & Inventory', weather: 'Weather' };
+type View = 'tee' | 'eod' | 'settings' | 'support' | 'tournament' | 'ops' | 'carts' | 'messages' | 'broadcasts' | 'store' | 'weather' | 'pricing';
+const LABEL: Partial<Record<View, string>> = { tee: 'Tee Sheet', eod: 'End of Day', support: 'Support Tickets', settings: 'Settings', carts: 'Beverage Carts', messages: 'Messages', broadcasts: 'Broadcasts', store: 'Store & Inventory', weather: 'Weather', pricing: 'Pricing & Policies' };
 
 const DEMO = !import.meta.env.VITE_SUPABASE_URL;
 
@@ -102,7 +103,7 @@ export function ClubhouseOS() {
     </div>
   );
   const teeSheet = (
-    <TeeSheet bookings={ops.teeSheet} blocks={ops.teeBlocks} courseHours={s.courseHours} now={clock}
+    <TeeSheet interval={ops.pricing.interval} bookings={ops.teeSheet} blocks={ops.teeBlocks} courseHours={s.courseHours} now={clock}
       onBook={(b) => act({ type: 'book', booking: b }, `Booked ${b.name} at ${b.time}`)} onCancel={(id) => act({ type: 'unbook', id }, 'Cancelled a reservation')}
       onBlock={(k) => act({ type: 'block', block: k }, `Blocked: ${k.reason}`)} onUnblock={(id) => act({ type: 'unblock', id }, 'Removed a block')}
       onEditBlock={(k) => act({ type: 'editBlock', block: k }, `Edited block: ${k.reason}`)} />
@@ -171,6 +172,7 @@ export function ClubhouseOS() {
               <NavItem icon={Megaphone} label="Broadcasts" active={current === 'broadcasts'} onClick={() => setView('broadcasts')} tone="emerald" />
               <NavItem icon={CloudLightning} label="Weather" active={current === 'weather'} onClick={() => setView('weather')} tone="emerald" />
               <NavItem icon={Package} label="Store" active={current === 'store'} onClick={() => setView('store')} tone="emerald" />
+                <NavItem icon={BadgeDollarSign} label="Pricing" active={current === 'pricing'} onClick={() => setView('pricing')} tone="emerald" />
               <NavItem icon={Receipt} label="End of Day" active={current === 'eod'} onClick={() => setView('eod')} tone="emerald" />
               <NavItem icon={LifeBuoy} label="Support" active={current === 'support'} onClick={() => setView('support')} tone="emerald" badge={unresolved ? String(unresolved) : undefined} />
               <NavItem icon={Settings2} label="Settings" active={current === 'settings'} onClick={() => setView('settings')} tone="emerald" />
@@ -186,6 +188,7 @@ export function ClubhouseOS() {
                 <NavItem icon={Megaphone} label="Broadcasts" active={current === 'broadcasts'} onClick={() => setView('broadcasts')} tone="emerald" />
                 <NavItem icon={CloudLightning} label="Weather" active={current === 'weather'} onClick={() => setView('weather')} tone="emerald" />
                 <NavItem icon={Package} label="Store" active={current === 'store'} onClick={() => setView('store')} tone="emerald" />
+                <NavItem icon={BadgeDollarSign} label="Pricing" active={current === 'pricing'} onClick={() => setView('pricing')} tone="emerald" />
                 <NavItem icon={Receipt} label="End of Day" active={current === 'eod'} onClick={() => setView('eod')} tone="emerald" />
                 <NavItem icon={LifeBuoy} label="Support" active={current === 'support'} onClick={() => setView('support')} tone="emerald" badge={unresolved ? String(unresolved) : undefined} />
                 <NavItem icon={Settings2} label="Settings" active={current === 'settings'} onClick={() => setView('settings')} tone="emerald" />
@@ -224,6 +227,7 @@ export function ClubhouseOS() {
             <StoreManager menu={ops.menu} charityLive={charityOpen(s)} inHouse={s.inHouse}
               onUpsert={(i, label) => act({ type: 'menuUpsert', item: i }, label)} onRemove={(i) => act({ type: 'menuRemove', sku: i.sku }, `Removed ${i.name}`)} />
           )}
+          {current === 'pricing' && <PricingPolicies pricing={ops.pricing} onPublish={(p) => { act({ type: 'pricing', pricing: p }, 'Published pricing & policies'); haptic('success'); }} />}
           {current === 'weather' && <WeatherHub lat={home.lat} lng={home.lng} place={home.name} onBroadcast={broadcastPreset} />}
           {current === 'ops' && (
             <div className="grid h-full min-h-0 grid-cols-1 gap-3 @5xl:grid-cols-2" data-testid="unified-ops">

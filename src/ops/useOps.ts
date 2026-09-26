@@ -39,6 +39,7 @@ function read(): OpsState {
         // Newer collections: fall back to the defaults for older saves.
         ...Object.fromEntries((['menu', 'carts', 'messages', 'broadcasts', 'sos', 'events', 'verifications', 'shares'] as const)
           .map((k) => [k, Array.isArray(raw[k]) ? raw[k] : k === 'verifications' && DEMO ? [DEMO_VERIFICATION] : initialOps()[k]])),
+        pricing: raw.pricing && Array.isArray(raw.pricing.bands) ? raw.pricing : initialOps().pricing,
         // 'delivered' was renamed 'completed' (End of Day tally counts completed orders).
         orders: raw.orders.map((o: Omit<Order, 'status'> & { status: string }) => (o.status === 'delivered' ? { ...o, status: 'completed', completedAt: o.completedAt ?? o.createdAt } : o)),
       };

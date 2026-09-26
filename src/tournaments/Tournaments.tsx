@@ -101,7 +101,7 @@ export function Tournaments({ captain, onBack, handle = '', friends = [], initia
 
       {step === 'list' && (
         <div role="tablist" className="z-10 mb-4 flex rounded-xl border border-white/10 bg-black/40 p-1 backdrop-blur-md">
-          {([['events', 'Events'], ['saved', `Saved${favs.length ? ` · ${favs.length}` : ''}`], ['mine', `My Teams${mine.length ? ` · ${mine.length}` : ''}`]] as const).map(([id, label]) => (
+          {([['events', 'Events'], ['saved', `Saved${favs.length ? ` · ${favs.length}` : ''}`], ['mine', `My Tournaments${mine.length ? ` · ${mine.length}` : ''}`]] as const).map(([id, label]) => (
             <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className={`flex-1 rounded-lg py-2 text-[10px] font-bold uppercase tracking-wide ${tab === id ? 'border border-emerald-500/30 bg-emerald-500/20 text-emerald-400' : 'border border-transparent text-white/50'}`}>{label}</button>
           ))}
         </div>

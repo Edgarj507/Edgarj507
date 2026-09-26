@@ -224,6 +224,19 @@ Migration `20261002000000_comms_inventory_organizers.sql`; tests in `supabase/te
 - Push notifications only reach phones with the app open or backgrounded (Web Notifications). Delivering to closed apps needs APNs/FCM from a server function.
 - The lightning risk score is a heuristic (thunderstorm codes, NWS warnings, CAPE). Strike-distance alerts need a licensed feed plugged into `LightningProvider`.
 
+## 13. Tee-time booking, pricing & SOS confirmation
+
+Migration `20261003000000_tee_booking_pricing.sql`; tests in `supabase/tests/tee_booking.test.ts`.
+
+- **Pricing** (`tee_pricing`, `tee_rate_bands`): readable by everyone signed in, and writable only by that course's staff. Policy text is plain (no `<>`) and has length limits.
+- **Booking:**
+  - Golfers can't insert into `tee_times`. They call `book_tee_time()`, which checks course hours, the tee interval, the booking window, "not in the past", blocks (trigger), the walking rule and the per-golfer limit.
+  - The name and phone come from the verified account, and the price comes from `tee_quote()`. A client-sent price is never used.
+  - A double booking returns `tee_time_taken` (unique constraint).
+- **Privacy:** golfers read only their own reservations. `tee_availability()` shows taken/blocked slots without names or phone numbers.
+- **Cancellation:** `cancel_tee_time()` works only on your own app reservation, and only outside the course's cancellation window.
+- **SOS false alarms:** tapping SOS only opens a full-screen confirmation. The alert is sent after a 2-second press-and-hold. Releasing early, "No, I'm OK" or closing the screen sends nothing. Cart SOS in the Clubhouse OS needs a second tap to confirm.
+
 ## Deploying
 ```bash
 supabase link --project-ref <ref>

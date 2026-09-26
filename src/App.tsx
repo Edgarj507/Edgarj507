@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   ChevronLeft, Search, Check, Wind, Sun, Trophy, Users, MapPin,
   Target, ChevronRight, Briefcase, Share2, QrCode, UserPlus, ScanLine,
-  MessageCircle, AtSign, Link2, Settings, Trophy as TrophyIcon, Lock, CircleHelp
+  MessageCircle, CalendarClock, AtSign, Link2, Settings, Trophy as TrophyIcon, Lock, CircleHelp
 } from 'lucide-react';
 import { CaddieHud } from './hud/CaddieHud';
 import { MapPlaceholder } from './hud/MapPlaceholder';
@@ -27,6 +27,7 @@ import { ClubhouseOS } from './clubhouse/ClubhouseOS';
 import { OrganizerOS } from './organizer/OrganizerOS';
 import { StaffPortal } from './views/StaffPortal';
 import { Tournaments } from './tournaments/Tournaments';
+import { TeeTimeBooking } from './booking/TeeTimeBooking';
 import { TrackingNotice } from './views/TrackingNotice';
 import { HelpCenter } from './help/HelpCenter';
 import { isOnboarded, Onboarding } from './help/Onboarding';
@@ -49,7 +50,7 @@ const FORMAT_HELP: Record<Format, string> = {
 };
 const NEEDS_PARTNER: Format[] = ['Match Play', 'Best Ball'];
 
-type View = 'menu' | 'tournaments' | 'course' | 'courses' | 'invite' | 'bag' | 'friends' | 'hud' | 'scorecard' | 'recap' | 'profile' | 'settings';
+type View = 'menu' | 'teetimes' | 'tournaments' | 'course' | 'courses' | 'invite' | 'bag' | 'friends' | 'hud' | 'scorecard' | 'recap' | 'profile' | 'settings';
 
 const MOCK_DATA = {
   friends: {
@@ -183,6 +184,7 @@ export default function App() {
       <div className="flex flex-col gap-3 z-10 mt-auto">
         {[
           { id: 'course', label: t('menu.selectCourse'), icon: <MapPin size={14} /> },
+          { id: 'teetimes', label: 'Book Tee Time', icon: <CalendarClock size={14} /> },
           { id: 'tournaments', label: t('menu.tournaments'), icon: <TrophyIcon size={14} /> },
           { id: 'bag', label: t('menu.myBag'), icon: <Briefcase size={14} /> },
           { id: 'friends', label: t('menu.friends'), icon: <Users size={14} /> },
@@ -762,6 +764,9 @@ export default function App() {
             </div>
             <div className="relative z-20 h-full w-full p-safe-inset">
               {currentView === 'menu' && ViewMenu()}
+              {currentView === 'teetimes' && (
+                <TeeTimeBooking golfer={{ name: auth.profile.display_name, phone: auth.phone ?? null, email: auth.user?.email ?? '' }} onBack={() => setCurrentView('menu')} />
+              )}
               {currentView === 'tournaments' && (
                 <Tournaments
                   captain={{ first: captainName[0], last: captainName.slice(1).join(' '), phone: auth.phone ?? '', email: auth.user?.email ?? '' }}

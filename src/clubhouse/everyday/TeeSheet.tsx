@@ -1,3 +1,4 @@
+import { HOLES_LABEL } from '../../ops/teetimes';
 import { useMemo, useState } from 'react';
 import {
   Ban, CalendarDays, CalendarRange, ChevronLeft, ChevronRight, Clock, CloudRain, Droplets, Lock, Phone, PhoneCall, Plus,
@@ -10,7 +11,6 @@ import {
 import { newId } from '../../ops/useOps';
 import { field, Modal, Panel, Stat } from '../ui';
 
-const INTERVAL = 10; // minutes between tee times
 
 export const REASON_ICON: Record<BlockReason, LucideIcon> = {
   Maintenance: Wrench, 'Private Event': Lock, Tournament: Trophy, 'Season Closed': Snowflake,
@@ -33,10 +33,12 @@ interface Props {
   onUnblock: (id: string) => void;
   onEditBlock: (k: TeeBlock) => void;
   now: number;
+  /** Minutes between tee times (Pricing & Policies). */
+  interval?: number;
 }
 
 /** Everyday operations: full-screen tee sheet (no map) for one day, with bookings and blocks. */
-export function TeeSheet({ bookings, blocks, courseHours, onBook, onCancel, onBlock, onUnblock, onEditBlock, now }: Props) {
+export function TeeSheet({ bookings, blocks, courseHours, onBook, onCancel, onBlock, onUnblock, onEditBlock, now, interval: INTERVAL = 10 }: Props) {
   const [date, setDate] = useState(() => localDate(now));
   const [filter, setFilter] = useState<Filter>('all');
   const [modal, setModal] = useState<{ mode: 'reserve' | 'block'; time: string; editing?: TeeBlock } | null>(null);
@@ -49,7 +51,7 @@ export function TeeSheet({ bookings, blocks, courseHours, onBook, onCancel, onBl
     const out: string[] = [];
     for (let m = open; m < end; m += INTERVAL) out.push(fromMin(m));
     return out;
-  }, [courseHours]);
+  }, [courseHours, INTERVAL]);
   const slots: Slot[] = useMemo(() => {
     const byTime = new Map(bookings.filter((b) => b.date === date).map((b) => [b.time, b]));
     return times.map((time) => ({ time, booking: byTime.get(time), block: blockFor(blocks, date, time) }));
@@ -146,6 +148,7 @@ export function TeeSheet({ bookings, blocks, courseHours, onBook, onCancel, onBl
                     <span className="min-w-0 flex-1 truncate font-semibold text-white">{b.name}</span>
                     {k && <span className="flex items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[9px] font-bold text-red-200"><Icon size={10} /> {k.reason}</span>}
                     <span className="flex gap-0.5" aria-hidden>{Array.from({ length: 4 }, (_, i) => <UserRound key={i} size={11} className={i < b.size ? 'text-emerald-300' : 'text-white/15'} />)}</span>
+                    {b.holes && <span className="hidden text-[9px] text-white/45 @2xl:inline">{b.holes === '18' ? '18' : b.holes === 'front9' ? 'F9' : 'B9'} · {b.transport === 'walk' ? 'Walk' : 'Cart'}</span>}
                     <span className="w-14 text-right text-[9px] font-bold uppercase tracking-widest text-white/40">{b.source === 'phone' ? 'Phone' : b.source === 'walkup' ? 'Walk-up' : 'App'}</span>
                   </>
                 ) : k ? (
@@ -164,7 +167,7 @@ export function TeeSheet({ bookings, blocks, courseHours, onBook, onCancel, onBl
       </Panel>
 
       {modal && (
-        <TeeModal date={date} mode={modal.mode} time={modal.time} times={times} slots={slots} isPast={isPast} bookings={bookings} editing={modal.editing}
+        <TeeModal interval={INTERVAL} date={date} mode={modal.mode} time={modal.time} times={times} slots={slots} isPast={isPast} bookings={bookings} editing={modal.editing}
           onClose={() => setModal(null)} onBook={(b) => { onBook(b); setModal(null); }}
           onBlock={(k) => { if (modal.editing) onEditBlock({ ...k, id: modal.editing.id }); else onBlock(k); setModal(null); }} />
       )}
@@ -178,6 +181,8 @@ export function TeeSheet({ bookings, blocks, courseHours, onBook, onCancel, onBl
             {viewing.email && <><dt className="text-white/45">Email</dt><dd>{viewing.email}</dd></>}
             <dt className="text-white/45">Source</dt><dd className="capitalize">{viewing.source}</dd>
             {viewing.note && <><dt className="text-white/45">Note</dt><dd>{viewing.note}</dd></>}
+            {viewing.holes && <><dt className="text-white/45">Round</dt><dd>{HOLES_LABEL[viewing.holes]} · {viewing.transport === 'walk' ? 'Walking' : 'Riding (cart)'}</dd></>}
+            {viewing.total != null && <><dt className="text-white/45">Quoted</dt><dd className="font-mono text-emerald-300">${viewing.total.toFixed(2)} · pay at check-in</dd></>}
           </dl>
           <button onClick={() => { onCancel(viewing.id); setViewing(null); }} className="mt-5 flex h-11 w-full items-center justify-center gap-1.5 rounded-2xl border border-red-400/30 bg-red-500/10 text-[10px] font-black uppercase tracking-widest text-red-300">
             <Trash2 size={13} /> Cancel reservation
@@ -211,8 +216,8 @@ export function TeeSheet({ bookings, blocks, courseHours, onBook, onCancel, onBl
 
 type Scope = 'slot' | 'window' | 'range';
 
-function TeeModal({ date, mode: initialMode, time: initialTime, times, slots, isPast, bookings, editing, onClose, onBook, onBlock }: {
-  date: string; mode: 'reserve' | 'block'; time: string; times: string[]; slots: Slot[]; isPast: (t: string) => boolean; bookings: TeeBooking[]; editing?: TeeBlock;
+function TeeModal({ interval: INTERVAL, date, mode: initialMode, time: initialTime, times, slots, isPast, bookings, editing, onClose, onBook, onBlock }: {
+  interval: number; date: string; mode: 'reserve' | 'block'; time: string; times: string[]; slots: Slot[]; isPast: (t: string) => boolean; bookings: TeeBooking[]; editing?: TeeBlock;
   onClose: () => void; onBook: (b: TeeBooking) => void; onBlock: (k: TeeBlock) => void;
 }) {
   const open = slots.filter((s) => !s.booking && !s.block && !isPast(s.time)).map((s) => s.time);

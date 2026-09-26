@@ -79,14 +79,22 @@ export function InboxSheet({ comms, tab: start = 'chat', onClose }: { comms: Pla
   );
 }
 
-const HOLD_MS = 1500;
+const HOLD_MS = 2000;
 
-/** SOS: press and hold to alert the clubhouse (prevents pocket-dials), with a direct 911 option. */
+/**
+ * SOS safety guard. Tapping the SOS button never sends anything by itself: it opens this
+ * full-screen confirmation ("Are you sure you need emergency assistance?"), and the alert is
+ * dispatched only after a deliberate 1.5-second press-and-hold on the confirm control.
+ * Releasing early, tapping outside, or "No, I'm OK" sends nothing. Once confirmed, the
+ * Clubhouse OS raises its audible alarm + centered modal, and this screen shows the status.
+ */
 export function SosSheet({ comms, where, onClose }: { comms: PlayerComms; where: { hole?: number; lat?: number; lng?: number }; onClose: () => void }) {
   const [note, setNote] = useState('');
   const [progress, setProgress] = useState(0);
+  const [hint, setHint] = useState(false);
   const timer = useRef<number | null>(null);
   const start = () => {
+    setHint(false);
     const t0 = performance.now();
     const tick = () => {
       const p = Math.min(1, (performance.now() - t0) / HOLD_MS);
@@ -96,37 +104,42 @@ export function SosSheet({ comms, where, onClose }: { comms: PlayerComms; where:
     };
     timer.current = requestAnimationFrame(tick);
   };
-  const stop = () => { if (timer.current) cancelAnimationFrame(timer.current); timer.current = null; setProgress(0); };
-  useEffect(() => () => stop(), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const stop = () => {
+    if (timer.current) { cancelAnimationFrame(timer.current); setHint(true); }
+    timer.current = null; setProgress(0);
+  };
+  useEffect(() => () => { if (timer.current) cancelAnimationFrame(timer.current); }, []);
   const a = comms.mySos;
 
   return (
-    <div className="absolute inset-0 z-[70] flex items-end bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <section role="dialog" aria-label="Emergency SOS" onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-sm rounded-t-3xl border border-red-400/40 bg-zinc-950/95 p-5 pb-safe text-center">
-        <div className="mb-3 flex items-center justify-between">
-          <span className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.25em] text-red-300"><Siren size={14} /> Emergency</span>
-          <button onClick={onClose} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-white/5 text-white/60"><X size={14} /></button>
-        </div>
+    <div className="absolute inset-0 z-[70] flex flex-col items-center justify-center bg-red-950/90 p-5 pt-safe pb-safe backdrop-blur-md">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.35),transparent_65%)]" />
+      <section role="alertdialog" aria-modal="true" aria-label="Emergency SOS" className="relative w-full max-w-sm rounded-3xl border-2 border-red-400/70 bg-zinc-950/95 p-5 text-center shadow-[0_0_60px_rgba(239,68,68,0.5)]">
         {a ? (
           <div role="status" aria-label="SOS status" className="flex flex-col items-center gap-2 py-2">
             {a.status === 'acknowledged'
-              ? <><ShieldCheck size={36} className="text-emerald-400" /><div className="text-lg font-black text-white">Help is on the way</div><div className="text-[12px] text-white/65">{a.ackBy} at the clubhouse is responding{a.hole ? ` to hole ${a.hole}` : ''}.</div></>
-              : <><Siren size={36} className="animate-pulse text-red-400" /><div className="text-lg font-black text-white">SOS sent</div><div className="text-[12px] text-white/65">The clubhouse has been alerted with your location{a.hole ? ` (hole ${a.hole})` : ''}. Stay where you are.</div></>}
-            {a.status === 'active' && <button onClick={() => { comms.cancelSos(); onClose(); }} className="mt-2 h-10 w-full rounded-2xl border border-white/15 text-[11px] font-bold uppercase tracking-widest text-white/75">I’m OK — cancel SOS</button>}
+              ? <><ShieldCheck size={40} className="text-emerald-400" /><div className="text-xl font-black text-white">Help is on the way</div><div className="text-[13px] text-white/70">{a.ackBy} at the clubhouse is responding{a.hole ? ` to hole ${a.hole}` : ''}.</div></>
+              : <><Siren size={40} className="animate-pulse text-red-400" /><div className="text-xl font-black text-white">SOS sent</div><div className="text-[13px] text-white/70">The clubhouse has been alerted with your location{a.hole ? ` (hole ${a.hole})` : ''}. Stay where you are.</div></>}
+            {a.status === 'active' && <button onClick={() => { comms.cancelSos(); onClose(); }} className="mt-2 h-11 w-full rounded-2xl border border-white/20 text-[11px] font-bold uppercase tracking-widest text-white/80">I’m OK — cancel SOS</button>}
+            <button onClick={onClose} className="h-10 w-full text-[10px] font-bold uppercase tracking-widest text-white/50">Close</button>
           </div>
         ) : (
           <>
-            <p className="mb-3 text-[12px] text-white/70">Alerts the clubhouse and beverage carts with your hole and GPS location. For heart attack, stroke, lightning strike or serious injury, call 911 first.</p>
-            <input aria-label="What happened (optional)" value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="What happened? (optional)" className="mb-3 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-[13px] text-white placeholder-white/30 focus:outline-none" />
+            <div className="mx-auto mb-3 grid h-16 w-16 place-items-center rounded-full bg-red-600 shadow-[0_0_40px_rgba(239,68,68,0.9)]"><Siren size={30} className="text-white" /></div>
+            <h2 className="text-xl font-black leading-tight text-white">Are you sure you need emergency assistance?</h2>
+            <p className="mt-2 text-[12px] text-white/70">This alerts the clubhouse and beverage carts with an alarm, your hole and GPS location. For heart attack, stroke, lightning strike or serious injury, call 911 first.</p>
+            <input aria-label="What happened (optional)" value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="What happened? (optional)" className="mt-3 w-full rounded-xl border border-white/10 bg-black/50 px-3 py-2.5 text-[13px] text-white placeholder-white/30 focus:outline-none" />
             <button
               onPointerDown={start} onPointerUp={stop} onPointerLeave={stop} onPointerCancel={stop}
               onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) start(); }} onKeyUp={stop}
               onContextMenu={(e) => e.preventDefault()}
-              aria-label="Hold to send SOS"
-              className="relative h-16 w-full touch-none select-none overflow-hidden rounded-2xl bg-red-600 text-[13px] font-black uppercase tracking-[0.2em] text-white shadow-[0_0_30px_rgba(220,38,38,0.6)]">
-              <span className="absolute inset-y-0 left-0 bg-white/25" style={{ width: `${progress * 100}%` }} />
-              <span className="relative flex items-center justify-center gap-2"><Siren size={18} /> Hold to send SOS</span>
+              aria-label="Hold to confirm SOS"
+              className="relative mt-3 h-16 w-full touch-none select-none overflow-hidden rounded-2xl bg-red-600 text-[13px] font-black uppercase tracking-[0.18em] text-white shadow-[0_0_30px_rgba(220,38,38,0.6)]">
+              <span className="absolute inset-y-0 left-0 bg-white/30" style={{ width: `${progress * 100}%` }} />
+              <span className="relative flex items-center justify-center gap-2"><Siren size={18} /> {progress > 0 ? 'Keep holding…' : 'Hold to confirm SOS'}</span>
             </button>
+            <p role="status" className="mt-1 h-4 text-[10px] text-red-200">{hint ? 'Released too soon — nothing was sent. Hold for 2 seconds.' : 'Press and hold for 2 seconds to send.'}</p>
+            <button onClick={onClose} className="mt-2 h-12 w-full rounded-2xl border border-white/25 bg-white/5 text-[12px] font-black uppercase tracking-widest text-white">No, I’m OK</button>
           </>
         )}
         <a href="tel:911" className="mt-3 flex h-11 items-center justify-center gap-2 rounded-2xl border border-white/20 text-[12px] font-black uppercase tracking-widest text-white"><Phone size={14} /> Call 911</a>
