@@ -7,6 +7,7 @@ import { DEFAULT_CARTS, nearestCart, type BevCart } from './carts';
 import { cleanText, validBroadcast, validMessage, type Broadcast, type ChatMessage, type SosAlert } from './comms';
 import { normalizeEvent, validateEvent, validateVerification, type CourseVerification, type TournamentEvent } from './venues';
 import { EVENTS } from '../tournaments/events';
+import { phonesIn, playerShare, seatPrice, shotgunHole, teamPhones } from './roster';
 import { canCancel, cleanPricing, DEFAULT_PRICING, quote, teeAt, teeTimes, validatePricing, type Holes, type TeePricing, type Transport } from './teetimes';
 
 /** player = golfer app; staff = Clubhouse OS; organizer = Tournament OS; admin = Exclusive.Golf (verifications). */
@@ -206,12 +207,21 @@ export type OpsAction =
   | { type: 'reserve'; booking: TeeBooking }
   /** Golfer cancels their own app reservation inside the free-cancellation window. */
   | { type: 'cancelTee'; id: string; phone: string }
-  | { type: 'pricing'; pricing: TeePricing }; // staff
+  | { type: 'pricing'; pricing: TeePricing } // staff
+  /** Manual entry by an organizer / staff for a chosen tournament (paid amount recorded by them). */
+  | { type: 'staffRegister'; reg: Registration }
+  /** Move a whole team (and its payment) to another tournament. */
+  | { type: 'moveTeam'; id: string; toEventId: string }
+  /** Move one roster player to another tournament as their own entry, with their share of the payment. */
+  | { type: 'movePlayer'; id: string; slot: 0 | 1 | 2; toEventId: string; newId: string }
+  /** Undo helper: put registrations back exactly as they were. */
+  | { type: 'restoreRegs'; regs: Registration[]; remove: string[] }; // staff / organizer
 
 const STAFF_ONLY = new Set<OpsAction['type']>(['setting', 'status', 'book', 'unbook', 'block', 'unblock', 'editBlock', 'ticketStatus',
   'menuUpsert', 'menuRemove', 'cartUpdate', 'assignCart', 'sosStatus', 'pricing']);
 /** Actions tournament organizers may also take (their event's CRM, page, announcements). */
-const STAFF_OR_ORGANIZER = new Set<OpsAction['type']>(['eventDetails', 'setPaid', 'checkIn', 'broadcast', 'eventUpsert', 'eventRemove', 'activeEvent']);
+const STAFF_OR_ORGANIZER = new Set<OpsAction['type']>(['eventDetails', 'setPaid', 'checkIn', 'broadcast', 'eventUpsert', 'eventRemove', 'activeEvent',
+  'staffRegister', 'moveTeam', 'movePlayer', 'restoreRegs']);
 const ADMIN_ONLY = new Set<OpsAction['type']>(['verifyDecision']);
 
 export function allowed(role: Role, type: OpsAction['type']) {
@@ -288,6 +298,55 @@ export function opsReducer(s: OpsState, a: OpsAction, role: Role): OpsState {
     }
     case 'register':
       return s.registrations.some((r) => r.id === a.reg.id) ? s : { ...s, registrations: [...s.registrations, a.reg] };
+    case 'staffRegister': {
+      const r = a.reg;
+      const ev = s.events.find((e) => e.id === r.eventId && e.status === 'scheduled');
+      if (!ev || s.registrations.some((x) => x.id === r.id)) return s;
+      if (s.registrations.filter((x) => x.eventId === ev.id).length >= ev.teams) return s; // field full
+      const captain = cleanContact(r.captain);
+      const roster = r.roster.map(cleanContact) as Registration['roster'];
+      const v = validateTeam(r.teamName, roster, captain);
+      if (!v.ok) return s;
+      const taken = phonesIn(s.registrations, ev.id);
+      if (teamPhones({ captain, roster }).some((ph) => taken.has(ph))) return s; // already entered in this event
+      const paid = Math.max(0, Math.min(ev.foursomePrice, Math.round((Number(r.paid) || 0) * 100) / 100));
+      return { ...s, registrations: [...s.registrations, {
+        id: r.id, eventId: ev.id, teamName: v.teamName, captain, roster, total: ev.foursomePrice, paid, paidAt: paid ? Date.now() : 0,
+        teeTime: shotgunHole(s.registrations, ev.id),
+      }] };
+    }
+    case 'moveTeam': {
+      const r = s.registrations.find((x) => x.id === a.id);
+      const to = s.events.find((e) => e.id === a.toEventId && e.status === 'scheduled');
+      if (!r || !to || r.eventId === to.id) return s;
+      if (s.registrations.filter((x) => x.eventId === to.id).length >= to.teams) return s;
+      const taken = phonesIn(s.registrations, to.id);
+      if (teamPhones(r).some((ph) => taken.has(ph))) return s;
+      // Payment moves with the team; the price becomes the new event's price (balance recomputed).
+      const moved: Registration = { ...r, eventId: to.id, total: to.foursomePrice, teeTime: shotgunHole(s.registrations, to.id), checkedInAt: undefined };
+      return { ...s, registrations: s.registrations.map((x) => (x.id === r.id ? moved : x)) };
+    }
+    case 'movePlayer': {
+      const r = s.registrations.find((x) => x.id === a.id);
+      const from = r && s.events.find((e) => e.id === r.eventId);
+      const to = s.events.find((e) => e.id === a.toEventId && e.status === 'scheduled');
+      const player = r?.roster[a.slot];
+      if (!r || !from || !to || !player || isOpenSlot(player) || r.eventId === to.id || s.registrations.some((x) => x.id === a.newId)) return s;
+      if (s.registrations.filter((x) => x.eventId === to.id).length >= to.teams) return s;
+      const ph = normalizePhone(player.phone);
+      if (!ph || phonesIn(s.registrations, to.id).has(ph)) return s;
+      const share = playerShare(r, from);
+      const left: Registration = { ...r, roster: r.roster.map((c, i) => (i === a.slot ? blankContact() : c)) as Registration['roster'], paid: Math.round((r.paid - share) * 100) / 100 };
+      const entry: Registration = {
+        id: a.newId, eventId: to.id, teamName: sanitizeText(`${player.last} (moved)`, 30), captain: player, roster: [blankContact(), blankContact(), blankContact()],
+        total: seatPrice(to), paid: Math.min(share, seatPrice(to)), paidAt: share ? Date.now() : 0, teeTime: shotgunHole(s.registrations, to.id),
+      };
+      return { ...s, registrations: [...s.registrations.map((x) => (x.id === r.id ? left : x)), entry] };
+    }
+    case 'restoreRegs': {
+      const ids = new Set([...a.remove, ...a.regs.map((r) => r.id)]);
+      return { ...s, registrations: [...s.registrations.filter((r) => !ids.has(r.id)), ...a.regs] };
+    }
     case 'roster': {
       const reg = s.registrations.find((r) => r.id === a.id);
       if (!reg) return s;
@@ -565,6 +624,9 @@ export function inverseOf(s: OpsState, a: OpsAction): OpsAction | null {
     }
     case 'book': return { type: 'unbook', id: a.booking.id };
     case 'pricing': return { type: 'pricing', pricing: s.pricing };
+    case 'staffRegister': return { type: 'restoreRegs', regs: [], remove: [a.reg.id] };
+    case 'moveTeam': { const r = s.registrations.find((x) => x.id === a.id); return r ? { type: 'restoreRegs', regs: [r], remove: [] } : null; }
+    case 'movePlayer': { const r = s.registrations.find((x) => x.id === a.id); return r ? { type: 'restoreRegs', regs: [r], remove: [a.newId] } : null; }
     case 'unbook': { const b = s.teeSheet.find((x) => x.id === a.id); return b ? { type: 'book', booking: b } : null; }
     case 'block': return { type: 'unblock', id: a.block.id };
     case 'unblock': { const k = s.teeBlocks.find((x) => x.id === a.id); return k ? { type: 'block', block: k } : null; }

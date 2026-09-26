@@ -237,6 +237,18 @@ Migration `20261003000000_tee_booking_pricing.sql`; tests in `supabase/tests/tee
 - **Cancellation:** `cancel_tee_time()` works only on your own app reservation, and only outside the course's cancellation window.
 - **SOS false alarms:** tapping SOS only opens a full-screen confirmation. The alert is sent after a 2-second press-and-hold. Releasing early, "No, I'm OK" or closing the screen sends nothing. Cart SOS in the Clubhouse OS needs a second tap to confirm.
 
+## 14. Manual roster entry & cross-tournament reassignment
+
+Migration `20261004000000_roster_entry_reassign.sql`; tests in `supabase/tests/roster_reassign.test.ts`.
+
+- **Functions only:** `staff_register()`, `move_registration()` and `move_player()` are security-definer functions. The caller must manage the event: be staff of that course, or the event's own organizer. A move needs rights on **both** the source and target events.
+- **Event checks:** the target must be scheduled, in the future and not full.
+- **Duplicates:** a golfer's phone can appear only once per event, whether as a captain account, a captain contact or a roster slot.
+- **Payments:** a desk-recorded payment is capped at the foursome price. A moved team keeps its paid amount, and its price becomes the new event's. A moved player carries `min(team paid / players, one seat)`, and the team keeps the rest.
+- **Accountless golfers:** walk-up and phone-in captains need no account. They're stored as a validated `captain_contact` using the same rules as roster slots (name, E.164 phone, email, no `<>`).
+- **Audit:** every entry and move is written to `registration_audit` (who, from, to, amount), readable only by people who manage those events.
+- **Undo (app):** the move actions record an exact snapshot (`restoreRegs`), so Undo puts the registrations back as they were.
+
 ## Deploying
 ```bash
 supabase link --project-ref <ref>

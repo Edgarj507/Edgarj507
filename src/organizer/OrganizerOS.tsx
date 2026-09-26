@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CalendarRange, CircleHelp, CloudLightning, Lock, MapPin, Megaphone, Pencil, Plus, Star, Trash2, Trophy, Users } from 'lucide-react';
+import { AlertTriangle, ArrowRightLeft, CalendarRange, RotateCcw, Search, X, CircleHelp, CloudLightning, Lock, MapPin, Megaphone, Pencil, Plus, Star, Trash2, Trophy, Users } from 'lucide-react';
 import { useRole } from '../auth/RoleContext';
 import { useOps, newId } from '../ops/useOps';
 import { validateEvent, venueById, VENUES, type TournamentEvent } from '../ops/venues';
@@ -11,8 +11,10 @@ import { HelpCenter } from '../help/HelpCenter';
 import { field, glass, Modal } from '../clubhouse/ui';
 import { setDiagnosticView } from '../support/diagnostics';
 import { haptic } from '../lib/haptics';
+import { useUndo } from '../clubhouse/useUndo';
+import { RosterDesk } from './RosterDesk';
 
-type View = 'events' | 'teams' | 'broadcasts' | 'weather';
+type View = 'events' | 'roster' | 'teams' | 'broadcasts' | 'weather';
 
 /**
  * Organizer OS — for tournament organizers who run events at one or more verified courses.
@@ -29,6 +31,8 @@ export function OrganizerOS() {
   const [help, setHelp] = useState(false);
   const [preset, setPreset] = useState<{ kind: BroadcastKind; n: number }>({ kind: 'general', n: 0 });
   const [now] = useState(() => Date.now());
+  const [query, setQuery] = useState('');
+  const { act, undo, snack, dismissSnack } = useUndo(ops, dispatch);
   const event = ops.events.find((e) => e.id === selectedId) ?? ops.events[0];
   const venue = event ? venueById(event.venueId) : undefined;
   useEffect(() => setDiagnosticView(`organizer/${view}`), [view]);
@@ -42,7 +46,7 @@ export function OrganizerOS() {
   });
 
   const nav: { id: View; label: string; icon: typeof Trophy }[] = [
-    { id: 'events', label: 'Events', icon: CalendarRange }, { id: 'teams', label: 'Teams', icon: Users },
+    { id: 'events', label: 'Events', icon: CalendarRange }, { id: 'roster', label: 'Roster & search', icon: ArrowRightLeft }, { id: 'teams', label: 'Teams', icon: Users },
     { id: 'broadcasts', label: 'Notify field', icon: Megaphone }, { id: 'weather', label: 'Weather', icon: CloudLightning },
   ];
 
@@ -63,7 +67,12 @@ export function OrganizerOS() {
             </select>
           </label>
         )}
-        <div className="ml-auto flex items-center gap-2">
+        <label className="relative ml-auto min-w-[220px] flex-1 @5xl:max-w-sm">
+          <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+          <input aria-label="Search golfers" value={query} onChange={(e) => { setQuery(e.target.value); if (e.target.value.trim()) setView('roster'); }}
+            placeholder="Find a golfer · name or phone" className="h-9 w-full rounded-full border border-white/15 bg-black/40 pl-8 pr-3 text-[12px] text-white placeholder-white/35 focus:border-sky-400/50 focus:outline-none" />
+        </label>
+        <div className="flex items-center gap-2">
           <button onClick={() => setHelp(true)} aria-label="Help" className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/40 text-white/80"><CircleHelp size={15} /></button>
           <button onClick={lockOrganizer} className="flex h-8 items-center gap-1.5 rounded-full border border-white/15 bg-black/40 px-3 text-[10px] font-bold uppercase tracking-widest text-white/80"><Lock size={12} /> Sign out</button>
         </div>
@@ -122,6 +131,14 @@ export function OrganizerOS() {
               </ul>
             </div>
           )}
+          {view === 'roster' && (
+            <RosterDesk ops={ops} events={ops.events} query={query} onQuery={setQuery} defaultEventId={event?.id}
+              actions={{
+                onRegister: (r) => { act({ type: 'staffRegister', reg: r }, `Registered ${r.teamName} · ${ops.events.find((e) => e.id === r.eventId)?.name}`); haptic('success'); },
+                onMoveTeam: (id, to, label) => { act({ type: 'moveTeam', id, toEventId: to }, label); haptic('success'); },
+                onMovePlayer: (id, slot, to, label) => { act({ type: 'movePlayer', id, slot, toEventId: to, newId: newId() }, label); haptic('success'); },
+              }} />
+          )}
           {view === 'teams' && event && (
             <EventCRM event={event} regs={regs} details={ops.eventDetails[event.id]}
               onSave={(id, p) => dispatch({ type: 'roster', id, ...p })}
@@ -143,6 +160,13 @@ export function OrganizerOS() {
       {edit && <EventEditor start={edit} isNew={!ops.events.some((e) => e.id === edit.id)} onClose={() => setEdit(null)}
         onSave={(e) => { dispatch({ type: 'eventUpsert', event: e }); setSelectedId(e.id); setEdit(null); haptic('success'); }} />}
       {help && <HelpCenter audience="staff" onClose={() => setHelp(false)} />}
+      {snack && (
+        <div role="status" aria-label="Undo" className="absolute bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-white/15 bg-zinc-900/95 py-2 pl-4 pr-2 shadow-2xl backdrop-blur-2xl">
+          <span className="max-w-[360px] truncate text-[12px] text-white/85">{snack.label}</span>
+          <button onClick={() => undo(snack.id)} className="flex items-center gap-1 rounded-xl bg-amber-300 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-black"><RotateCcw size={12} /> Undo</button>
+          <button onClick={dismissSnack} aria-label="Dismiss" className="text-white/40"><X size={14} /></button>
+        </div>
+      )}
     </div>
   );
 }

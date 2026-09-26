@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { haptic } from '../lib/haptics';
-import { BadgeDollarSign, Bug, CalendarClock, Car, ChefHat, CloudLightning, Megaphone, MessageSquareText, Package, PhoneIncoming, ChevronRight, CircleHelp, History, LayoutDashboard, LifeBuoy, Lock, MapPinOff, Radar, Receipt, RotateCcw, Settings2, ShieldCheck, Trophy, Truck, X, type LucideIcon } from 'lucide-react';
+import { ArrowRightLeft, BadgeDollarSign, Bug, CalendarClock, Car, ChefHat, CloudLightning, Megaphone, MessageSquareText, Package, PhoneIncoming, ChevronRight, CircleHelp, History, LayoutDashboard, LifeBuoy, Lock, MapPinOff, Radar, Receipt, RotateCcw, Settings2, ShieldCheck, Trophy, Truck, X, type LucideIcon } from 'lucide-react';
 import { SOMERBY } from '../data/course';
 import { useOps } from '../ops/useOps';
 import { charityOpen, isOpenAt, isOpenOrder } from '../ops/model';
@@ -20,6 +20,7 @@ import { MessagesView, threadsOf } from './everyday/MessagesView';
 import { BroadcastsView } from './everyday/BroadcastsView';
 import { StoreManager } from './everyday/StoreManager';
 import { PricingPolicies } from './everyday/PricingPolicies';
+import { RosterDesk } from '../organizer/RosterDesk';
 import { PhoneOrderModal } from './everyday/PhoneOrderModal';
 import { WeatherHub } from '../weather/WeatherHub';
 import { SosAlarm } from './SosAlarm';
@@ -37,8 +38,8 @@ import { Queue } from './Queue';
 import { ago, glass, hhmm } from './ui';
 import { useUndo } from './useUndo';
 
-type View = 'tee' | 'eod' | 'settings' | 'support' | 'tournament' | 'ops' | 'carts' | 'messages' | 'broadcasts' | 'store' | 'weather' | 'pricing';
-const LABEL: Partial<Record<View, string>> = { tee: 'Tee Sheet', eod: 'End of Day', support: 'Support Tickets', settings: 'Settings', carts: 'Beverage Carts', messages: 'Messages', broadcasts: 'Broadcasts', store: 'Store & Inventory', weather: 'Weather', pricing: 'Pricing & Policies' };
+type View = 'tee' | 'eod' | 'settings' | 'support' | 'tournament' | 'ops' | 'carts' | 'messages' | 'broadcasts' | 'store' | 'weather' | 'pricing' | 'roster';
+const LABEL: Partial<Record<View, string>> = { tee: 'Tee Sheet', eod: 'End of Day', support: 'Support Tickets', settings: 'Settings', carts: 'Beverage Carts', messages: 'Messages', broadcasts: 'Broadcasts', store: 'Store & Inventory', weather: 'Weather', pricing: 'Pricing & Policies', roster: 'Roster & search' };
 
 const DEMO = !import.meta.env.VITE_SUPABASE_URL;
 
@@ -75,6 +76,7 @@ export function ClubhouseOS() {
   const openThread = (o: { name: string; phone?: string }) => ({ key: threadKey(o.phone, o.name), name: o.name });
   const readThread = useCallback((t: string) => dispatch({ type: 'readThread', thread: t, by: 'staff' }), [dispatch]);
   const cartName = useCallback((id: string) => ops.carts.find((c) => c.id === id)?.name ?? id, [ops.carts]);
+  const [rosterQ, setRosterQ] = useState('');
   const broadcastPreset = (kind: BroadcastKind) => { setPreset((p) => ({ kind, n: p.n + 1 })); setView('broadcasts'); };
 
   useEffect(() => { const id = setInterval(() => setClock(Date.now()), 5_000); return () => clearInterval(id); }, []);
@@ -167,6 +169,7 @@ export function ClubhouseOS() {
             <section aria-label="Clubhouse operations" className={`${glass} rounded-2xl p-2`}>
               <SectionLabel dot={s.tournamentLive ? 'bg-red-500 animate-pulse' : 'bg-emerald-400'} title="Clubhouse" sub={`In-house tournament · ${event.name}`} />
               <NavItem icon={LayoutDashboard} label="Operations" active={current === 'ops'} onClick={() => setView('ops')} tone="emerald" badge={s.tournamentLive ? 'LIVE' : undefined} />
+              <NavItem icon={ArrowRightLeft} label="Roster & search" active={current === 'roster'} onClick={() => setView('roster')} tone="emerald" />
               <NavItem icon={Car} label="Bev Carts" active={current === 'carts'} onClick={() => setView('carts')} tone="emerald" badge={ops.orders.filter((o) => o.cartId && isOpenOrder(o)).length ? String(ops.orders.filter((o) => o.cartId && isOpenOrder(o)).length) : undefined} />
               <NavItem icon={MessageSquareText} label="Messages" active={current === 'messages'} onClick={() => setView('messages')} tone="emerald" badge={unreadMsgs ? String(unreadMsgs) : undefined} />
               <NavItem icon={Megaphone} label="Broadcasts" active={current === 'broadcasts'} onClick={() => setView('broadcasts')} tone="emerald" />
@@ -198,6 +201,7 @@ export function ClubhouseOS() {
                 <SectionLabel dot={s.tournamentLive ? 'bg-red-500 animate-pulse' : 'bg-amber-300'} title="Tournament" sub={event.name} />
                 <NavItem icon={s.tournamentLive ? Radar : Trophy} label={s.tournamentLive ? 'Live Radar' : 'Pre-Event CRM'} active={tournament} onClick={() => setView('tournament')} tone="amber"
                   badge={s.tournamentLive ? 'LIVE' : `${live.regs.length} teams`} />
+                <NavItem icon={ArrowRightLeft} label="Roster & search" active={current === 'roster'} onClick={() => setView('roster')} tone="amber" />
                 {startSwitch}
               </section>
             </>
@@ -226,6 +230,14 @@ export function ClubhouseOS() {
           {current === 'store' && (
             <StoreManager menu={ops.menu} charityLive={charityOpen(s)} inHouse={s.inHouse}
               onUpsert={(i, label) => act({ type: 'menuUpsert', item: i }, label)} onRemove={(i) => act({ type: 'menuRemove', sku: i.sku }, `Removed ${i.name}`)} />
+          )}
+          {current === 'roster' && (
+            <RosterDesk ops={ops} events={ops.events} query={rosterQ} onQuery={setRosterQ} defaultEventId={event.id}
+              actions={{
+                onRegister: (r) => { act({ type: 'staffRegister', reg: r }, `Registered ${r.teamName}`); haptic('success'); },
+                onMoveTeam: (id, to, label) => { act({ type: 'moveTeam', id, toEventId: to }, label); haptic('success'); },
+                onMovePlayer: (id, slot, to, label) => { act({ type: 'movePlayer', id, slot, toEventId: to, newId: newId() }, label); haptic('success'); },
+              }} />
           )}
           {current === 'pricing' && <PricingPolicies pricing={ops.pricing} onPublish={(p) => { act({ type: 'pricing', pricing: p }, 'Published pricing & policies'); haptic('success'); }} />}
           {current === 'weather' && <WeatherHub lat={home.lat} lng={home.lng} place={home.name} onBroadcast={broadcastPreset} />}
